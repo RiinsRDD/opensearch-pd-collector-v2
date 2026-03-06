@@ -1,0 +1,18 @@
+services:
+  api:
+    build: .
+    container_name: pdn_collector_api
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/code/app
+      - ./logs:/code/logs
+    env_file:
+      - .env
+    networks:
+      - pdn_network
+
+networks:
+  pdn_network:
+    external: true

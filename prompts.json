@@ -1,0 +1,102 @@
+{
+    "project_summary": "PDN Collector V2 — микросервис для автоматического поиска и сбора персональных данных (ПДн) в кластере OpenSearch. Система основана на Clean Architecture с FastAPI бэкендом (PostgreSQL, SQLAlchemy, OpenSearch, APScheduler) и React/Vite фронтендом (SPA, Master-Detail pattern, Tailwind).",
+    "global_constraints": {
+        "tech_stack": [
+            "Python 3.12+",
+            "FastAPI 0.135.1",
+            "SQLAlchemy 2.0.47 (asyncpg)",
+            "Alembic",
+            "OpenSearch-py",
+            "React 19.2.0",
+            "TypeScript 5.9.3",
+            "Vite 7.3.1",
+            "Tailwind CSS 4.2.1",
+            "PostgreSQL 15+",
+            "Docker & Docker Compose"
+        ],
+        "coding_standards": [
+            "Использование Clean Architecture и слоистой структуры для бэкенда",
+            "Асинхронное взаимодействие (asyncio, asyncpg, httpx)",
+            "Строгая типизация в Python (Pydantic 2) и TypeScript",
+            "Компонентный подход на UI с использованием Tailwind CSS",
+            "Миграции БД через Alembic"
+        ],
+        "testing_requirements": [
+            "Покрытие детекторов ПДн unit-тестами",
+            "Скрипт seed_mock_data.py для заполнения тестовых данных"
+        ]
+    },
+    "execution_order": [
+        "M001",
+        "M002",
+        "M003",
+        "M004",
+        "M005",
+        "M006",
+        "M007",
+        "M008"
+    ],
+    "modules": [
+        {
+            "module_id": "M001",
+            "name": "Базовая структура БД и ORM модели",
+            "dependencies": [],
+            "prompt": "---\n## МОДУЛЬ: M001 — Базовая структура БД и ORM модели\n\n### КОНТЕКСТ\nПроект: PDN Collector V2\nУже реализовано: []\nТекущая задача: Настройка подключения к БД, реализация базового репозитория и всех SQLAlchemy-моделей на основе asyncpg.\n\n### ЗАДАЧА\nСоздать основу базы данных. Тебе нужно настроить SQLAlchemy, создать модели данных: Settings (SystemSetting, RegexRule, StatusSetting), Indices (IndexOwner), PDN (PDNPattern, PDNFinding), Tasks (JiraTask), Tags (Tag, PatternTagLink), Logs (ScannerLog) и настроить Alembic для генерации первоначальной миграции.\n\n### ВХОДНЫЕ ДАННЫЕ\n- Структура docs/: 02_database.md, 13_project_structure.md, 14_env_and_config.md\n- Интерфейсы от предыдущих модулей: Нет\n\n### ТРЕБОВАНИЯ\n- [ ] Настроить pydantic-settings для загрузки DATABASE_URL\n- [ ] Настроить async engine и sessionmaker (asyncpg)\n- [ ] Создать все описанные в БД таблицы с правильными связями (FK) и типами\n- [ ] Инициализировать Alembic (асинхронный env.py) и сгенерировать initial_migration\n- [ ] Реализовать базовый класс CRUDBase для переиспользования типовых операций\n\n### ОЖИДАЕМЫЙ РЕЗУЛЬТАТ\nФайлы в `app/models/`, `app/db/session.py`, `app/db/repository.py`, миграция Alembic в `migrations/versions/`.\n\n### ИНТЕГРАЦИЯ\nКак этот модуль используется следующими: Все сервисы бэкенда и API будут использовать эти модели и сессии БД.\n---"
+        },
+        {
+            "module_id": "M002",
+            "name": "Настройки системы (Settings API)",
+            "dependencies": [
+                "M001"
+            ],
+            "prompt": "---\n## МОДУЛЬ: M002 — Настройки системы (Settings API)\n\n### КОНТЕКСТ\nПроект: PDN Collector V2\nУже реализовано: [M001]\nТекущая задача: REST API для управления глобальными настройками (SystemSetting, RegexRule) и тегами.\n\n### ЗАДАЧА\nРеализовать эндпоинты в `app/api/endpoints/settings.py` для чтения и обновления `system_settings` и `regex_rules`. Эндпоинты: GET/POST /global, GET/POST /indices, GET/POST /statuses, DELETE /tags, и роуты для глобальных исключений.\n\n### ВХОДНЫЕ ДАННЫЕ\n- Структура docs/: 05_api_endpoints.md, 06_settings_system.md\n- Интерфейсы от предыдущих модулей: ORM модели из M001, CRUDBase\n\n### ТРЕБОВАНИЯ\n- [ ] Роуты покрыты схемами Pydantic для in/out\n- [ ] GET /global должен возвращать агрегированные настройки в структуре GlobalSettingsResponse\n- [ ] DELETE /tags/{tag_name} должен удалять теги каскадно\n- [ ] Настроить FastAPI роутер `settings` и подключить в `app/api/router.py`\n\n### ОЖИДАЕМЫЙ РЕЗУЛЬТАТ\nФайл `app/api/endpoints/settings.py`, схемы Pydantic, тесты на эндпоинты.\n\n### ИНТЕГРАЦИЯ\nКак этот модуль используется следующими: Фронтенд (M007) будет загружать настройки при старте.\n---"
+        },
+        {
+            "module_id": "M003",
+            "name": "Детекторы ПДн и клиент OpenSearch",
+            "dependencies": [
+                "M001"
+            ],
+            "prompt": "---\n## МОДУЛЬ: M003 — Детекторы ПДн и клиент OpenSearch\n\n### КОНТЕКСТ\nПроект: PDN Collector V2\nУже реализовано: [M001]\nТекущая задача: Логика обнаружения персональных данных и HTTP-клиент к OpenSearch.\n\n### ЗАДАЧА\n1. Создать `OpenSearchClient` в `app/services/opensearch_client.py` с использованием метода `search_after` для обхода индексов.\n2. Реализовать класс `PDNDetectors` в `app/services/detectors.py`, который будет принимать строку и проверять её по регулярным выражениям из `RegexRule` (phone, email, card, fio).\n\n### ВХОДНЫЕ ДАННЫЕ\n- Структура docs/: 03_scanner_engine.md, 04_detectors.md\n- Интерфейсы от предыдущих модулей: Модели БД (для загрузки regex)\n\n### ТРЕБОВАНИЯ\n- [ ] `search_after_generator` для обхода OpenSearch без ошибки 10k limit\n- [ ] Методы проверки (is_phone, is_email, is_card, is_fio)\n- [ ] Поддержка динамических регулярных выражений из базы\n- [ ] Написать unit-тесты для функции матчинга\n\n### ОЖИДАЕМЫЙ РЕЗУЛЬТАТ\nКлассы сервисов `OpenSearchClient` и `PDNDetectors`, тесты в `tests/test_detectors.py`.\n\n### ИНТЕГРАЦИЯ\nКак этот модуль используется следующими: Движок сканера (M004) будет их вызывать для анализа документов.\n---"
+        },
+        {
+            "module_id": "M004",
+            "name": "Движок Сканера и Scanner API",
+            "dependencies": [
+                "M002",
+                "M003"
+            ],
+            "prompt": "---\n## МОДУЛЬ: M004 — Движок Сканера и Scanner API\n\n### КОНТЕКСТ\nПроект: PDN Collector V2\nУже реализовано: [M002, M003]\nТекущая задача: Ядро системы сканирования и фоновые задачи (APScheduler).\n\n### ЗАДАЧА\nСоздать `ScannerService`, который будет: a) делать flatten (обход JSON документа с сохранением dot-path), b) передавать значения в детекторы, c) группировать и вычислять SHA256 (cache_key), d) сохранять `PDNPattern` и `PDNFinding` в БД. Также реализовать `app/api/endpoints/scanner.py`.\n\n### ВХОДНЫЕ ДАННЫЕ\n- Структура docs/: 03_scanner_engine.md, 08_scheduler.md\n- Интерфейсы от предыдущих модулей: `OpenSearchClient`, `PDNDetectors`, ORM\n\n### ТРЕБОВАНИЯ\n- [ ] Функция `_traverse(obj, path)` для сбора путей\n- [ ] Расчёт хеша `cache_key`\n- [ ] Логика тегирования (G, S, U) при сканировании\n- [ ] POST /scan/{index_pattern} для запуска одиночного сканирования (background_tasks)\n- [ ] Логирование запусков в БД (ScannerLog)\n\n### ОЖИДАЕМЫЙ РЕЗУЛЬТАТ\nФайлы `app/services/scanner.py`, `app/api/endpoints/scanner.py`, `app/services/scheduler.py`.\n\n### ИНТЕГРАЦИЯ\nКак этот модуль используется следующими: UI (M008) будет запускать сканирование, `Indices API` будет отображать результаты.\n---"
+        },
+        {
+            "module_id": "M005",
+            "name": "Интеграция с Jira и Indices Tree API",
+            "dependencies": [
+                "M004"
+            ],
+            "prompt": "---\n## МОДУЛЬ: M005 — Интеграция с Jira и Indices Tree API\n\n### КОНТЕКСТ\nПроект: PDN Collector V2\nУже реализовано: [M004]\nТекущая задача: Выдача древовидной структуры на UI и возможность создания задач (Mock Jira).\n\n### ЗАДАЧА\n1. Реализовать `JiraService` (`app/services/jira_integration.py`) для создания тикетов.\n2. Реализовать `app/api/endpoints/indices_tree.py`: эндпоинт `GET /` должен формировать вложенное дерево (Индексы -> Типы ПДн -> Cache Keys) с фильтрацией.\n\n### ВХОДНЫЕ ДАННЫЕ\n- Структура docs/: 05_api_endpoints.md, 07_jira_integration.md\n- Интерфейсы от предыдущих модулей: PDNPattern (M001), ScannerService (перезапуск примеров)\n\n### ТРЕБОВАНИЯ\n- [ ] `GET /indices` формирует сложное дерево объектов для фронтенда\n- [ ] `POST /indices/jira/tasks` вызывает JiraService.create_issue\n- [ ] `POST /indices/examples/update/{cache_key}` для обновления примеров\n\n### ОЖИДАЕМЫЙ РЕЗУЛЬТАТ\n`app/api/endpoints/indices_tree.py`, `app/services/jira_integration.py`.\n\n### ИНТЕГРАЦИЯ\nКак этот модуль используется следующими: Frontend (M008) будет строить левое дерево Explorer по этим данным.\n---"
+        },
+        {
+            "module_id": "M006",
+            "name": "Frontend: Каркас и Роутинг",
+            "dependencies": [],
+            "prompt": "---\n## МОДУЛЬ: M006 — Frontend: Каркас и Роутинг\n\n### КОНТЕКСТ\nПроект: PDN Collector V2\nУже реализовано: []\nТекущая задача: Создать React 19 + TypeScript + Vite + Tailwind 4.\n\n### ЗАДАЧА\nИнициализировать приложение, настроить Vite плагины, роутинг (React Router `BrowserRouter`), и базовый Layout (Header, ScannerStatusBar).\n\n### ВХОДНЫЕ ДАННЫЕ\n- Структура docs/: 10_frontend_spec.md\n- Интерфейсы от предыдущих модулей: Нет\n\n### ТРЕБОВАНИЯ\n- [ ] Настроить `vite.config.ts` и `@tailwindcss/vite`\n- [ ] Создать `App.tsx` с роутингом (`/`, `/settings`, `/tasks`)\n- [ ] Создать `Header.tsx` и `ScannerStatusBar.tsx` (каркасы)\n\n### ОЖИДАЕМЫЙ РЕЗУЛЬТАТ\nРаботающий пустой SPA, базовые страницы (пустышки).\n\n### ИНТЕГРАЦИЯ\nКак этот модуль используется следующими: Это фундамент UI, на который встанут все компоненты.\n---"
+        },
+        {
+            "module_id": "M007",
+            "name": "Frontend: API Axios и Contexts",
+            "dependencies": [
+                "M006"
+            ],
+            "prompt": "---\n## МОДУЛЬ: M007 — Frontend: API Axios и Contexts\n\n### КОНТЕКСТ\nПроект: PDN Collector V2\nУже реализовано: [M006]\nТекущая задача: Интеграция с бэкендом (Axios) и глобальный стейт выделенных элементов.\n\n### ЗАДАЧА\nСоздать instance Axios в `client.ts` для запросов на `/api/v1`. Создать `SelectionContext.tsx` для хранения: `selectedPatterns` и `selectedIndexPattern`. Создать API-обёртки: `settingsApi`, `indicesApi`, `exclusionsApi`.\n\n### ВХОДНЫЕ ДАННЫЕ\n- Структура docs/: 10_frontend_spec.md (раздел API-клиент)\n- Интерфейсы от предыдущих модулей: URL-ы бэкенда (M002, M004, M005)\n\n### ТРЕБОВАНИЯ\n- [ ] Настроен базовый URL из env `VITE_API_BASE_URL`\n- [ ] Provider обёрнут вокруг `App`\n- [ ] Типизация для паттернов (PDNPattern)\n\n### ОЖИДАЕМЫЙ РЕЗУЛЬТАТ\n`src/api/client.ts`, `src/context/SelectionContext.tsx`, глобальный стейт работает.\n\n### ИНТЕГРАЦИЯ\nКак этот модуль используется следующими: Компоненты UI (M008) получат доступ к данным.\n---"
+        },
+        {
+            "module_id": "M008",
+            "name": "Frontend: Master-Detail Dashboard и Settings UI",
+            "dependencies": [
+                "M007"
+            ],
+            "prompt": "---\n## МОДУЛЬ: M008 — Frontend: Master-Detail Dashboard и Settings UI\n\n### КОНТЕКСТ\nПроект: PDN Collector V2\nУже реализовано: [M007]\nТекущая задача: Полноценная реализация `IndicesTree` (Master) и панелей (Detail), а также экрана Настроек.\n\n### ЗАДАЧА\n1. Написать компонент `IndicesTree.tsx` (вложенный рендер, одиночное выделение).\n2. Написать `Dashboard.tsx` — если выбран паттерн, отображать 3 вкладки (Паттерн, Примеры, Сырой JSON с `react-json-view-lite`).\n3. Внедрить дизайн настроек из `Settings.tsx` (Глобальные, Регулярки, Исключения).\n\n### ВХОДНЫЕ ДАННЫЕ\n- Структура docs/: 10_frontend_spec.md\n- Интерфейсы от предыдущих модулей: API для загрузки дерева и настроек\n\n### ТРЕБОВАНИЯ\n- [ ] Дерево должно использовать `SelectionContext`\n- [ ] Должна работать кнопка \"Одиночное сканирование\"\n- [ ] Использовать Lucide React для иконок\n\n### ОЖИДАЕМЫЙ РЕЗУЛЬТАТ\nГотовый UI.\n\n### ИНТЕГРАЦИЯ\nКак этот модуль используется следующими: Завершение проекта, UI готов к деплою.\n---"
+        }
+    ]
+}
