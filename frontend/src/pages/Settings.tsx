@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Tag, Palette, Database, Trash2, Filter, FileMinus, X, Plus, Save, Code } from 'lucide-react';
+import { Settings as SettingsIcon, Tag, Palette, Database, Trash2, Filter, FileMinus, X, Plus, Save, Code, Server } from 'lucide-react';
 import GlobalExceptions from '../components/settings/GlobalExceptions';
 import IndexExceptions from '../components/settings/IndexExceptions';
 import PdnRegexList from '../components/settings/PdnRegexList';
@@ -34,7 +34,15 @@ export default function Settings() {
                 exclude_index_regexes: ['^\\.ds-logs-.*'],
                 include_index_regexes: ['.*'],
                 mail_service_names: [], unknown_mail_service_parts: [], card_bank_bins_4: [],
-                invalid_def_codes: [], surn_ends_cis: [], surn_ends_world: [], patron_ends: [], fio_special_markers: []
+                invalid_def_codes: [], surn_ends_cis: [], surn_ends_world: [], patron_ends: [], fio_special_markers: [],
+                jira_base_url: 'https://jira.bcs.ru', jira_project_key: 'EIB', jira_issue_type: '15400',
+                jira_priority: '4', jira_components: '47920', jira_labels: 'dtsz_auto_pd_discovery',
+                jira_dib_service: 'CMDB-859449', jira_epic_link: 'EIB-15679', jira_cfo: 'CMDB-3968',
+                jira_kipd_type: '68857', jira_task_source: '28834', jira_action_group: '28819',
+                jira_action_type: '28830', jira_process: 'CMDB-2760490', jira_criticality_level: '52414',
+                jira_location_type: '55677', jira_it_system: 'CMDB-1358427', jira_exploit_poc: '68865',
+                jira_cvss_score: 0, jira_column_id: '43720', jira_risk_text: 'Утечка критичных данных',
+                jira_work_description: 'Исключить попадание открытых персональных данных в индексы OpenSearch. Настроить фильтрацию или применение одностороннего хеширования/маскирования для полей, содержащих конфиденциальную информацию.'
             });
         } finally {
             setLoadingSettings(false);
@@ -262,6 +270,16 @@ export default function Settings() {
                         <span className="truncate">Регулярки ПДн</span>
                     </button>
                     <button
+                        onClick={() => setActiveTab('jira')}
+                        className={clsx(
+                            "w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-md transition-colors",
+                            activeTab === 'jira' ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50"
+                        )}
+                    >
+                        <Server className={clsx("w-4 h-4 mr-3 min-w-4", activeTab === 'jira' ? "text-indigo-500" : "text-slate-400")} />
+                        <span className="truncate">Настройка Jira</span>
+                    </button>
+                    <button
                         onClick={() => setActiveTab('global_exclusions')}
                         className={clsx(
                             "w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-md transition-colors",
@@ -427,6 +445,119 @@ export default function Settings() {
 
                         {activeTab === 'index_exclusions' && (
                             <IndexExceptions />
+                        )}
+
+                        {activeTab === 'jira' && (
+                            <>
+                                {loadingSettings || !globalSettings ? (
+                                    <div className="text-slate-500 text-sm">Загрузка настроек...</div>
+                                ) : (
+                                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
+                                            <h3 className="font-semibold text-slate-800 flex items-center">
+                                                <Server className="w-4 h-4 mr-2" /> Настройки Jira
+                                            </h3>
+                                            <button
+                                                onClick={saveSettingsServer}
+                                                className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded shadow-sm hover:bg-indigo-700 flex items-center transition"
+                                            >
+                                                <Save className="w-4 h-4 mr-2" /> Сохранить
+                                            </button>
+                                        </div>
+
+                                        <div className="p-6">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                <div className="space-y-4">
+                                                    <h4 className="text-sm font-bold text-slate-700 border-b pb-2">Основные</h4>
+
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-1">Jira Base URL</label>
+                                                        <input type="text" value={globalSettings.jira_base_url} onChange={e => handleSettingChange('jira_base_url', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 sm:text-sm" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-1">Project Key</label>
+                                                        <input type="text" value={globalSettings.jira_project_key} onChange={e => handleSettingChange('jira_project_key', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 sm:text-sm" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-1">Issue Type</label>
+                                                        <input type="text" value={globalSettings.jira_issue_type} onChange={e => handleSettingChange('jira_issue_type', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 sm:text-sm" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-1">Priority (Risk)</label>
+                                                        <input type="text" value={globalSettings.jira_priority} onChange={e => handleSettingChange('jira_priority', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 sm:text-sm" placeholder='{"Блокер": "1", "Критическая": "2", ...}' />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-1">Labels (через запятую)</label>
+                                                        <input type="text" value={globalSettings.jira_labels} onChange={e => handleSettingChange('jira_labels', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 sm:text-sm" />
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-4">
+                                                    <h4 className="text-sm font-bold text-slate-700 border-b pb-2">Кастомные поля (Инсайт / CMDB)</h4>
+
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-1">Сервис ДИБ (CMDB)</label>
+                                                        <input type="text" value={globalSettings.jira_dib_service} onChange={e => handleSettingChange('jira_dib_service', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 sm:text-sm" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-1">ЦФО № (CMDB)</label>
+                                                        <input type="text" value={globalSettings.jira_cfo} onChange={e => handleSettingChange('jira_cfo', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 sm:text-sm" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-1">Процесс (CMDB)</label>
+                                                        <input type="text" value={globalSettings.jira_process} onChange={e => handleSettingChange('jira_process', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 sm:text-sm" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-1">ИТ Система (CMDB)</label>
+                                                        <input type="text" value={globalSettings.jira_it_system} onChange={e => handleSettingChange('jira_it_system', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 sm:text-sm" />
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-4">
+                                                    <h4 className="text-sm font-bold text-slate-700 border-b pb-2">Словари и Аналитика</h4>
+
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-1">Epic Link</label>
+                                                        <input type="text" value={globalSettings.jira_epic_link} onChange={e => handleSettingChange('jira_epic_link', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 sm:text-sm" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-1">Колонна</label>
+                                                        <input type="text" value={globalSettings.jira_column_id} onChange={e => handleSettingChange('jira_column_id', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 sm:text-sm" />
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div>
+                                                            <label className="block text-sm font-medium text-slate-700 mb-1">Тип КИПД</label>
+                                                            <input type="text" value={globalSettings.jira_kipd_type} onChange={e => handleSettingChange('jira_kipd_type', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 sm:text-sm" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-sm font-medium text-slate-700 mb-1">Источник</label>
+                                                            <input type="text" value={globalSettings.jira_task_source} onChange={e => handleSettingChange('jira_task_source', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 sm:text-sm" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-4">
+                                                    <h4 className="text-sm font-bold text-slate-700 border-b pb-2">Текстовые поля</h4>
+
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-1">Текст риска</label>
+                                                        <input type="text" value={globalSettings.jira_risk_text} onChange={e => handleSettingChange('jira_risk_text', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 sm:text-sm" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-1">Описание работ</label>
+                                                        <textarea
+                                                            value={globalSettings.jira_work_description}
+                                                            onChange={e => handleSettingChange('jira_work_description', e.target.value)}
+                                                            className="w-full h-24 p-3 border border-slate-300 rounded-md shadow-sm text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </>
                         )}
 
                         {activeTab === 'statuses' && (
