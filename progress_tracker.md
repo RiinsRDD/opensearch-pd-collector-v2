@@ -28,16 +28,16 @@
 
 ## Фронтенд (React, Vite, Tailwind)
 
-- [ ] **M006: Frontend: Каркас и Роутинг**
-  - [ ] Конфигурация Vite, TypeScript+Tailwind, ESLint
-  - [ ] `App.tsx` (React Router) + `Header`, базовые верстки страниц
-- [ ] **M007: Frontend: API Axios и Contexts**
-  - [ ] Настроенный инстанс Axios (`client.ts`)
-  - [ ] `SelectionContext` (Master-Detail state)
-- [ ] **M008: Frontend: Master-Detail Dashboard и Settings UI**
-  - [ ] Компонент `IndicesTree`
-  - [ ] Правая панель Dashboard (вкладки Паттерн, Примеры, Сырой JSON)
-  - [ ] UI страницы Settings (Глобальные, Регулярки, Исключения, Настройка Jira)
+- [x] ✅ **M006: Frontend: Каркас и Роутинг**
+  - [x] Конфигурация Vite, TypeScript+Tailwind, ESLint
+  - [x] `App.tsx` (React Router) + `Header`, базовые верстки страниц
+- [x] ✅ **M007: Frontend: API Axios и Contexts**
+  - [x] Настроенный инстанс Axios (`client.ts`)
+  - [x] `SelectionContext` (Master-Detail state)
+- [x] ✅ **M008: Frontend: Master-Detail Dashboard и Settings UI**
+  - [x] Компонент `IndicesTree`
+  - [x] Правая панель Dashboard (вкладки Паттерн, Примеры, Сырой JSON)
+  - [x] UI страницы Settings (Глобальные, Регулярки, Исключения, Настройка Jira)
 
 ## Опционально
 
