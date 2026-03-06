@@ -1,27 +1,55 @@
-import React from 'react';
-import { Activity, Terminal } from 'lucide-react';
+import { useState } from 'react';
+import { Activity, Clock, Terminal } from 'lucide-react';
+import ScannerLogsModal from '../modals/ScannerLogsModal';
 
-const ScannerStatusBar: React.FC = () => {
+export default function ScannerStatusBar() {
+    const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
+
+    // В будущем эти данные будут получены из API (/api/v1/scanner/status)
+    const isScanning = true;
+    const currentIndexPattern = "bcs-tech-logs-*";
+    const nextScanETA = "2ч 15м";
+
     return (
-        <footer className="h-8 bg-slate-100 border-t border-slate-200 flex items-center px-4 justify-between text-[11px] font-medium text-slate-600 shrink-0">
-            <div className="flex items-center gap-4">
-                <div className="flex items-center gap-1.5">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.4)]"></div>
-                    <span>Scanner: IDLE</span>
+        <>
+            <div
+                onClick={() => setIsLogsModalOpen(true)}
+                className="h-8 bg-slate-900 border-t border-slate-800 flex items-center px-4 shrink-0 shadow-sm z-20 text-slate-300 text-xs font-mono cursor-pointer hover:bg-slate-800 transition-colors justify-between"
+            >
+                <div className="flex items-center space-x-4">
+                    {isScanning ? (
+                        <>
+                            <div className="flex items-center text-blue-400">
+                                <Activity className="w-3.5 h-3.5 mr-1.5 animate-pulse" />
+                                <span>Сканирование активно</span>
+                            </div>
+                            <div className="flex items-center text-emerald-400">
+                                <span className="mr-2">Текущий паттерн:</span>
+                                <span className="bg-slate-800 px-1.5 py-0.5 rounded text-emerald-300">{currentIndexPattern}</span>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="flex items-center text-slate-400">
+                                <Activity className="w-3.5 h-3.5 mr-1.5" />
+                                <span>Сканер в ожидании</span>
+                            </div>
+                            <div className="flex items-center text-slate-400">
+                                <Clock className="w-3.5 h-3.5 mr-1.5" />
+                                <span>Следующий запуск через: {nextScanETA}</span>
+                            </div>
+                        </>
+                    )}
                 </div>
-                <div className="h-3 w-px bg-slate-200"></div>
-                <div className="flex items-center gap-1.5">
-                    <Activity className="w-3 h-3 text-slate-400" />
-                    <span>Last scan: 5 minutes ago</span>
+                <div className="flex items-center text-slate-500 hover:text-slate-300 transition-colors">
+                    <Terminal className="w-3.5 h-3.5 mr-1.5" />
+                    <span>Посмотреть логи (последние 3)</span>
                 </div>
             </div>
 
-            <button className="flex items-center gap-1.5 hover:text-slate-900 transition-colors group">
-                <Terminal className="w-3 h-3 text-slate-400 group-hover:text-slate-900" />
-                <span>Open Scanner Logs</span>
-            </button>
-        </footer>
+            {isLogsModalOpen && (
+                <ScannerLogsModal onClose={() => setIsLogsModalOpen(false)} />
+            )}
+        </>
     );
-};
-
-export default ScannerStatusBar;
+}

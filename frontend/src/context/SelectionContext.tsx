@@ -1,15 +1,5 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-
-interface PDNPattern {
-    cache_key: string;
-    index_pattern: string;
-    field_path: string;
-    pdn_type: string;
-    context_type: string;
-    status: string;
-    hit_count: number;
-    tags: string[];
-}
+import { createContext, useContext, useState, type ReactNode } from 'react';
+import type { PDNPattern } from '../components/tree/IndicesTree';
 
 interface SelectionContextType {
     selectedPatterns: PDNPattern[];
@@ -20,26 +10,20 @@ interface SelectionContextType {
 
 const SelectionContext = createContext<SelectionContextType | undefined>(undefined);
 
-export const SelectionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export function SelectionProvider({ children }: { children: ReactNode }) {
     const [selectedPatterns, setSelectedPatterns] = useState<PDNPattern[]>([]);
     const [selectedIndexPattern, setSelectedIndexPattern] = useState<string | null>(null);
 
     return (
-        <SelectionContext.Provider value={{
-            selectedPatterns,
-            setSelectedPatterns,
-            selectedIndexPattern,
-            setSelectedIndexPattern
-        }}>
+        <SelectionContext.Provider value={{ selectedPatterns, setSelectedPatterns, selectedIndexPattern, setSelectedIndexPattern }}>
             {children}
         </SelectionContext.Provider>
     );
-};
+}
 
-export const useSelection = () => {
+// eslint-disable-next-line react-refresh/only-export-components
+export function useSelection() {
     const context = useContext(SelectionContext);
-    if (!context) {
-        throw new Error('useSelection must be used within a SelectionProvider');
-    }
+    if (!context) throw new Error('useSelection must be used within SelectionProvider');
     return context;
-};
+}
