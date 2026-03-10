@@ -51,6 +51,7 @@ opensearch-pd-collector-v2/
 │           ├── __init__.py
 │           ├── auth.py                # POST /login, GET /me (mock)
 │           ├── settings.py            # GET/POST /global, GET/POST /indices, GET/POST /statuses, DELETE /tags
+│           ├── index_owners.py        # CRUD /index-owners (настройки Jira assignee для индексов)
 │           ├── indices_tree.py        # GET /, POST /examples/update, POST/GET /jira/tasks, GET /jira/history
 │           ├── tasks.py               # GET /, POST / (заглушка)
 │           └── scanner.py             # POST /scan/{pattern}, GET /status, GET /logs
@@ -88,7 +89,9 @@ opensearch-pd-collector-v2/
 │       │   ├── settings/
 │       │   │   ├── GlobalExceptions.tsx # Вкладка "Глобальные исключения"
 │       │   │   ├── IndexExceptions.tsx  # Вкладка "Исключения индексов"
-│       │   │   └── PdnRegexList.tsx     # Вкладка "Регулярки ПДн"
+│       │   │   ├── IndexOwnersList.tsx  # Вкладка "Владельцы (Jira)"
+│       │   │   ├── PdnRegexList.tsx     # Вкладка "Регулярки ПДн"
+│       │   │   └── ScanFieldsList.tsx   # Вкладка "Дополнительные поля"
 │       │   └── tree/
 │       │       └── IndicesTree.tsx    # Дерево индексов (Explorer, ~18KB)
 │       └── pages/

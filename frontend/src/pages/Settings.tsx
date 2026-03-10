@@ -4,6 +4,7 @@ import GlobalExceptions from '../components/settings/GlobalExceptions';
 import IndexExceptions from '../components/settings/IndexExceptions';
 import PdnRegexList from '../components/settings/PdnRegexList';
 import ScanFieldsList from '../components/settings/ScanFieldsList';
+import { IndexOwnersList } from '../components/settings/IndexOwnersList';
 import clsx from 'clsx';
 import { settingsApi, type GlobalSettingsData } from '../api/client';
 
@@ -283,6 +284,16 @@ export default function Settings() {
                         <span className="truncate">Настройка Jira</span>
                     </button>
                     <button
+                        onClick={() => setActiveTab('index_owners')}
+                        className={clsx(
+                            "w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-md transition-colors",
+                            activeTab === 'index_owners' ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50"
+                        )}
+                    >
+                        <SettingsIcon className={clsx("w-4 h-4 mr-3 min-w-4", activeTab === 'index_owners' ? "text-indigo-500" : "text-slate-400")} />
+                        <span className="truncate">Владельцы (Jira)</span>
+                    </button>
+                    <button
                         onClick={() => setActiveTab('global_exclusions')}
                         className={clsx(
                             "w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-md transition-colors",
@@ -462,6 +473,14 @@ export default function Settings() {
 
                         {activeTab === 'scan_fields' && (
                             <ScanFieldsList />
+                        )}
+
+                        {activeTab === 'index_owners' && (
+                            <div className="bg-slate-900 rounded-xl shadow-sm border border-slate-700 overflow-hidden">
+                                <div className="p-6">
+                                    <IndexOwnersList />
+                                </div>
+                            </div>
                         )}
 
                         {activeTab === 'jira' && (

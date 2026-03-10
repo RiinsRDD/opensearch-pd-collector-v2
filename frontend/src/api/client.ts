@@ -154,3 +154,29 @@ export const scanFieldsApi = {
         return response.data;
     },
 };
+
+export interface IndexOwnerData {
+    id: number;
+    index_pattern: string;
+    cmdb_url: string | null;
+    tech_debt_id: string | null;
+    fio: string | null;
+}
+
+export const indexOwnersApi = {
+    getAll: async (): Promise<IndexOwnerData[]> => {
+        const response = await apiClient.get('/settings/index-owners/');
+        return response.data;
+    },
+    create: async (data: Omit<IndexOwnerData, 'id'>): Promise<IndexOwnerData> => {
+        const response = await apiClient.post('/settings/index-owners/', data);
+        return response.data;
+    },
+    update: async (id: number, data: Omit<IndexOwnerData, 'id'>): Promise<IndexOwnerData> => {
+        const response = await apiClient.put(`/settings/index-owners/${id}`, data);
+        return response.data;
+    },
+    delete: async (id: number): Promise<void> => {
+        await apiClient.delete(`/settings/index-owners/${id}`);
+    }
+};

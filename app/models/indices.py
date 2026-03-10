@@ -6,10 +6,6 @@ class IndexOwner(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     index_pattern = Column(String, unique=True, index=True, nullable=False)
-    team_name = Column(String, nullable=True)
-    contact_person = Column(String, nullable=True)
-    contact_email = Column(String, nullable=True)
-    notes = Column(String, nullable=True)
-    jira_key = Column(String, nullable=True)
-    is_active = Column(Boolean, default=True) # Сканировать ли этот индекс
-    override_global_settings = Column(Boolean, default=False)
+    cmdb_url = Column(String, nullable=True)
+    tech_debt_id = Column(String, nullable=True)
+    fio = Column(String, nullable=True)

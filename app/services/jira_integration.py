@@ -6,7 +6,7 @@ class JiraService:
     def __init__(self, base_url: str = "https://jira.bcs.ru"):
         self.base_url = base_url
 
-    async def create_issue(self, auth_token: str, index_pattern: str, cache_keys: list, comment: str, settings: dict, assignee: Optional[str] = None) -> Optional[str]:
+    async def create_issue(self, auth_token: str, index_pattern: str, cache_keys: list, comment: str, settings: dict, assignee: Optional[str] = None, index_owner = None) -> Optional[str]:
         """
         Create a correction task in Jira on behalf of the user using their auth_token
         """
@@ -55,7 +55,12 @@ class JiraService:
             }
         }
         
-        if assignee:
+        if index_owner:
+            if index_owner.fio:
+                payload["fields"]["assignee"] = {"name": index_owner.fio}
+            if index_owner.tech_debt_id:
+                payload["fields"]["customfield_29834"]["child"]["id"] = index_owner.tech_debt_id
+        elif assignee:
             payload["fields"]["assignee"] = {"name": assignee}
 
         async with httpx.AsyncClient() as client:

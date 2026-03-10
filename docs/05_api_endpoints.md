@@ -33,6 +33,10 @@ api_router.include_router(scanner.router, prefix="/scanner", tags=["scanner"])
 | `POST` | `/global` | Обновить настройки (на вход `GlobalSettingsResponse`). Примечание: `unknown_mail_service_parts` является read-only со стороны UI и игнорируется при обновлении. |
 | `GET` | `/indices` | Получить индивидуальные настройки индексов |
 | `POST` | `/indices` | Обновить/создать настройку индекса |
+| `GET` | `/index-owners` | Получить список всех маппингов владельцев индексов (assignee Jira, тех. долг) |
+| `POST` | `/index-owners` | Создать маппинг владельца индекса |
+| `PUT` | `/index-owners/{owner_id}` | Изменить маппинг владельца индекса |
+| `DELETE` | `/index-owners/{owner_id}` | Удалить маппинг владельца индекса |
 | `GET` | `/statuses` | Получить список статусов и их цветов |
 | `POST` | `/statuses` | Обновить цвета статусов |
 | `DELETE` | `/tags/{tag_name}` | Глобальное удаление тега (cascade) |

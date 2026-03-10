@@ -26,6 +26,7 @@ async def create_issue(
 - **Issue type:** Берется из `jira_issue_type`
 - **Priority:** Парсится из `jira_priority`
 - Множество кастомных полей (customfield_XXX) для CMDB: `jira_dib_service`, `jira_cfo`, `jira_process`, `jira_it_system` и т.д.
+- **Владелец Индекса:** Если в БД `index_owners` есть запись для паттерна индекса, ФИО передается в `assignee`, а также заполняются поля CMDB Insight Object (`cmdb_url`) и Тех. долга (`tech_debt_id`).
 - **Summary:** `[{index_pattern}]` + шаблон
 - **Description:** Собирается из `jira_work_description` + список cache_keys
 

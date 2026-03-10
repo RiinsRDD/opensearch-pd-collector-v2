@@ -42,13 +42,9 @@
 |------|-----|----------|
 | `id` | Integer, PK | - |
 | `index_pattern` | String, unique, index | Паттерн индекса (`bcs-career-*`) |
-| `team_name` | String, nullable | Название команды |
-| `contact_person` | String, nullable | ФИО контактного лица |
-| `contact_email` | String, nullable | Email контактного лица |
-| `notes` | String, nullable | Заметки |
-| `jira_key` | String, nullable | Ключ проекта Jira |
-| `is_active` | Boolean, default `True` | Сканировать ли этот индекс |
-| `override_global_settings` | Boolean, default `False` | Переопределять ли глобальные настройки |
+| `cmdb_url` | String, nullable | Полный URL IT-системы в CMDB Jira |
+| `tech_debt_id` | String, nullable | Идентификатор тех. долга |
+| `fio` | String, nullable | ФИО ответственного за индекс (assignee) |
 
 ### 3. Данные сканирования ПДн (`app/models/pdn.py`)
 

@@ -7,6 +7,7 @@ from app.models.pdn import PDNPattern, PDNFinding
 from app.models.settings import SystemSetting
 from app.models.tags import Tag, PatternTagLink
 from app.models.tasks import JiraTask
+from app.models.indices import IndexOwner
 from app.services.jira_integration import JiraService
 import asyncio
 
@@ -123,12 +124,15 @@ async def create_jira_tasks(payload: CreateJiraTasksRequest, db: Session = Depen
     auth_token = "mock_token"
     jira_settings = _get_jira_settings(db)
     
+    index_owner = db.query(IndexOwner).filter(IndexOwner.index_pattern == index_pattern).first()
+    
     issue_key = await jira_service.create_issue(
         auth_token=auth_token,
         index_pattern=index_pattern,
         cache_keys=[p.cache_key for p in patterns],
         comment=payload.custom_message or "",
-        settings=jira_settings
+        settings=jira_settings,
+        index_owner=index_owner
     )
     
     if not issue_key:
@@ -201,12 +205,14 @@ async def create_all_confirmed_tasks(db: Session = Depends(get_db)):
     jira_settings = _get_jira_settings(db)
     
     for idx, keys in by_index.items():
+        index_owner = db.query(IndexOwner).filter(IndexOwner.index_pattern == idx).first()
         issue_key = await jira_service.create_issue(
             auth_token=auth_token,
             index_pattern=idx,
             cache_keys=keys,
             comment="Автоматическое создание задачи по всем подтверждённым ПДн",
-            settings=jira_settings
+            settings=jira_settings,
+            index_owner=index_owner
         )
         if issue_key:
             db_task = JiraTask(
