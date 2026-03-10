@@ -60,7 +60,7 @@
 | `index_pattern` | String, index | Паттерн индекса |
 | `field_path` | String | JSON-путь поля |
 | `pdn_type` | String | Тип ПДн |
-| `context_type` | String | `structured_key` / `free_text` / `ambiguous` |
+| `context_type` | String | `base` / `structured_key` / `free_text` / `ambiguous` |
 | `key_hint` | String, nullable | Подсказка по ключу |
 | `first_seen` | DateTime | Дата первого обнаружения |
 | `last_seen` | DateTime | Дата последнего обнаружения |

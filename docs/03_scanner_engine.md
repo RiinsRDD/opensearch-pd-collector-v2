@@ -7,7 +7,7 @@
 | Метод | Описание |
 |-------|----------|
 | `_traverse(obj, path)` | Рекурсивный обход JSON. Возвращает список `(path, value)` для всех финальных текстовых значений с полным JSON-путём в dot-нотации |
-| `_generate_cache_key(index_pattern, field_path, pdn_type, context)` | SHA256-хэш от `"index_pattern|field_path|pdn_type|context"` |
+| `_generate_cache_key(index_pattern, field_path, pdn_type, context)` | SHA256-хэш от `"index_pattern|field_path|pdn_type|context|scan_fields"` |
 | `process_document(doc, index_pattern)` | Обработка одного документа OS: flatten → detect → match |
 | `_apply_tag(cache_key, tag_code)` | Присвоение тега (`G`, `S`, `U`) к `PatternTagLink` |
 | `_clear_single_scan_tags(index_pattern)` | Удаление всех тегов `S` для паттернов указанного индекса |
@@ -25,8 +25,8 @@
    - Каждое строковое значение, его JSON-путь и список правил передаются в `PDNDetectors.detect(text, field_path, rules)` для проверки по активным регулярным выражениям и исключениям.
 
 4. **Агрегация и кэширование:**
-   - Совпадения группируются по `(index_pattern, field_path, pdn_type)`, вычисляется `cache_key` через SHA256.
-   - Если ключ уже есть в `pdn_patterns` — обновляется `hit_count` и `last_seen`.
+   - Совпадения группируются по `(index_pattern, field_path, pdn_type, context_type)`, вычисляется `cache_key` через SHA256. В `context_type` могут быть `base`, `structured_key`, `free_text`, `ambiguous`. Дополнительно учитываются значения `Scan Fields`.
+   - Если ключ уже есть в `pdn_patterns` — обновляется `last_seen`.
    - Если ключа нет — создаётся новый `PDNPattern` + сохраняются примеры `PDNFinding`.
 
 ## Режимы сканирования и тегирование
