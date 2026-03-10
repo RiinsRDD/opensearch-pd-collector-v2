@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import IndicesTree from '../components/tree/IndicesTree';
 import { JsonView, defaultStyles } from 'react-json-view-lite';
 import 'react-json-view-lite/dist/index.css';
-import { FileText, Database, ShieldAlert, Clock, Tag, CheckSquare, Search, ChevronRight } from 'lucide-react';
+import { FileText, Database, ShieldAlert, Clock, Tag, CheckSquare, Search, ChevronRight, Key, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { useSelection } from '../context/SelectionContext';
 import SingleScanModal from '../components/modals/SingleScanModal';
@@ -12,6 +12,39 @@ export default function Dashboard() {
     const [activeTab, setActiveTab] = useState<'pattern' | 'examples' | 'raw'>('pattern');
     const [taskSearch, setTaskSearch] = useState('');
     const [isSingleScanModalOpen, setIsSingleScanModalOpen] = useState(false);
+    const [sidebarWidth, setSidebarWidth] = useState(350);
+    const isResizing = useRef(false);
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isResizing.current) return;
+            let newWidth = e.clientX;
+            if (newWidth < 250) newWidth = 250;
+            if (newWidth > 800) newWidth = 800;
+            setSidebarWidth(newWidth);
+        };
+
+        const handleMouseUp = () => {
+            if (isResizing.current) {
+                isResizing.current = false;
+                document.body.style.cursor = 'default';
+                document.body.style.userSelect = 'auto';
+            }
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, []);
+
+    const startResizing = () => {
+        isResizing.current = true;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    };
 
     // Берем для отображения деталей первый выделенный элемент
     const primaryPattern = selectedPatterns.length > 0 ? selectedPatterns[0] : null;
@@ -41,16 +74,26 @@ export default function Dashboard() {
         <div className="flex h-full w-full bg-white overflow-hidden">
 
             {/* Левая панель: Explorer Tree */}
-            <div className="w-[350px] shrink-0 h-full border-r border-slate-200 bg-slate-50/30">
-                <IndicesTree
-                    selectedCacheKeys={selectedPatterns.map(p => p.cache_key)}
-                    selectedIndexPattern={selectedIndexPattern}
-                    onSelectPatterns={(patterns, idxPattern) => {
-                        setSelectedPatterns(patterns);
-                        if (idxPattern !== undefined) {
-                            setSelectedIndexPattern(idxPattern);
-                        }
-                    }}
+            <div
+                style={{ width: sidebarWidth }}
+                className="shrink-0 h-full border-r border-slate-200 bg-slate-50/30 relative flex group/sidebar"
+            >
+                <div className="flex-1 w-full h-full overflow-hidden">
+                    <IndicesTree
+                        selectedCacheKeys={selectedPatterns.map(p => p.cache_key)}
+                        selectedIndexPattern={selectedIndexPattern}
+                        onSelectPatterns={(patterns, idxPattern) => {
+                            setSelectedPatterns(patterns);
+                            if (idxPattern !== undefined) {
+                                setSelectedIndexPattern(idxPattern);
+                            }
+                        }}
+                    />
+                </div>
+                {/* Resizer Handle */}
+                <div
+                    className="w-[3px] cursor-col-resize hover:bg-blue-400 active:bg-blue-500 transition-colors h-full absolute right-0 top-0 z-10"
+                    onMouseDown={startResizing}
                 />
             </div>
 
@@ -158,6 +201,46 @@ export default function Dashboard() {
                                                 <div className="text-sm text-slate-700">2023-10-26 09:15:00</div>
                                             </div>
                                         </div>
+                                    </div>
+
+                                    {/* Карточка Контекста обнаружения */}
+                                    <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm">
+                                        <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center">
+                                            <Search className="w-4 h-4 mr-2 text-slate-400" /> Контекст обнаружения
+                                        </h3>
+                                        <div className="grid grid-cols-2 gap-y-4 gap-x-8">
+                                            <div>
+                                                <div className="text-xs text-slate-500 mb-1">Context Type</div>
+                                                <div className="flex items-center">
+                                                    {primaryPattern.context_type === 'base' && <><FileText className="w-4 h-4 text-slate-500 mr-1.5" /><span className="text-sm font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded">Native Document Field</span></>}
+                                                    {primaryPattern.context_type === 'structured_key' && <><Key className="w-4 h-4 text-emerald-500 mr-1.5" /><span className="text-sm font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Structured Key</span></>}
+                                                    {primaryPattern.context_type === 'free_text' && <><FileText className="w-4 h-4 text-blue-500 mr-1.5" /><span className="text-sm font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded">Free Text</span></>}
+                                                    {primaryPattern.context_type === 'ambiguous' && <><AlertTriangle className="w-4 h-4 text-amber-500 mr-1.5" /><span className="text-sm font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Ambiguous</span></>}
+                                                    {!primaryPattern.context_type && <span className="text-sm text-slate-500">-</span>}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-500 mb-1">Key Hint</div>
+                                                <div className="text-sm font-mono text-slate-800 bg-slate-100 px-2 py-0.5 rounded inline-block">
+                                                    {primaryPattern.key_hint || <span className="text-slate-400 italic">None</span>}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Дополнительные поля */}
+                                        {primaryPattern.extra_fields && Object.keys(primaryPattern.extra_fields).length > 0 && (
+                                            <div className="mt-4 pt-4 border-t border-slate-100">
+                                                <div className="text-xs text-slate-500 mb-2">Дополнительные поля разграничения:</div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {Object.entries(primaryPattern.extra_fields).map(([key, value]) => (
+                                                        <div key={key} className="flex items-center text-xs border border-slate-200 rounded overflow-hidden">
+                                                            <span className="bg-slate-50 text-slate-500 px-2 py-1 border-r border-slate-200">{key}</span>
+                                                            <span className="bg-white text-slate-700 font-medium px-2 py-1">{value as React.ReactNode}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Карточка тегов */}

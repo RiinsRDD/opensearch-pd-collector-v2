@@ -4,6 +4,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 export const apiClient = axios.create({
     baseURL: API_BASE_URL,
+    timeout: 3000,
     headers: {
         'Content-Type': 'application/json',
     },
@@ -128,4 +129,28 @@ export const pdnTypesApi = {
         const response = await apiClient.delete(`/settings/pdn-types/${id}`);
         return response.data;
     }
+};
+
+export interface ScanFieldConfig {
+    id: number;
+    index_pattern: string;
+    field_path: string;
+    is_active: boolean;
+    is_required: boolean;
+    created_at: string | null;
+}
+
+export const scanFieldsApi = {
+    getAll: async (): Promise<ScanFieldConfig[]> => {
+        const response = await apiClient.get('/settings/scan-fields');
+        return response.data;
+    },
+    create: async (data: { index_pattern: string; field_path: string }): Promise<any> => {
+        const response = await apiClient.post('/settings/scan-fields', data);
+        return response.data;
+    },
+    delete: async (id: number): Promise<any> => {
+        const response = await apiClient.delete(`/settings/scan-fields/${id}`);
+        return response.data;
+    },
 };

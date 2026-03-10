@@ -3,6 +3,7 @@ import { Settings as SettingsIcon, Tag, Palette, Database, Trash2, Filter, FileM
 import GlobalExceptions from '../components/settings/GlobalExceptions';
 import IndexExceptions from '../components/settings/IndexExceptions';
 import PdnRegexList from '../components/settings/PdnRegexList';
+import ScanFieldsList from '../components/settings/ScanFieldsList';
 import clsx from 'clsx';
 import { settingsApi, type GlobalSettingsData } from '../api/client';
 
@@ -14,36 +15,38 @@ export default function Settings() {
     const [viewModal, setViewModal] = useState<{ isOpen: boolean, title: string, items: string[] }>({ isOpen: false, title: '', items: [] });
 
     useEffect(() => {
-        if (activeTab === 'general' && !globalSettings) {
+        if (!globalSettings) {
             fetchGlobalSettings();
         }
-    }, [activeTab]);
+    }, []);
 
     const fetchGlobalSettings = async () => {
+        const defaultSettings: GlobalSettingsData = {
+            pdn_flags: { phone: true, email: true, card: true, fio: false },
+            examples_count: 5, scan_interval_hours: 24,
+            exclude_index_patterns: ['.kibana', '.tasks', '.opensearch-observability'],
+            exclude_index_regexes: ['^\\.ds-logs-.*'],
+            include_index_regexes: ['.*'],
+            mail_service_names: [], unknown_mail_service_parts: [], card_bank_bins_4: [],
+            invalid_def_codes: [], surn_ends_cis: [], surn_ends_world: [], patron_ends: [], fio_special_markers: [],
+            jira_base_url: 'https://jira.bcs.ru', jira_project_key: 'EIB', jira_issue_type: '15400',
+            jira_priority: '4', jira_components: '47920', jira_labels: 'dtsz_auto_pd_discovery',
+            jira_dib_service: 'CMDB-859449', jira_epic_link: 'EIB-15679', jira_cfo: 'CMDB-3968',
+            jira_kipd_type: '68857', jira_task_source: '28834', jira_action_group: '28819',
+            jira_action_type: '28830', jira_process: 'CMDB-2760490', jira_criticality_level: '52414',
+            jira_location_type: '55677', jira_it_system: 'CMDB-1358427', jira_exploit_poc: '68865',
+            jira_cvss_score: 0, jira_column_id: '43720', jira_risk_text: 'Утечка критичных данных',
+            jira_work_description: 'Исключить попадание открытых персональных данных в индексы OpenSearch. Настроить фильтрацию или применение одностороннего хеширования/маскирования для полей, содержащих конфиденциальную информацию.'
+        };
+
         try {
             setLoadingSettings(true);
             const data = await settingsApi.getSettings();
-            setGlobalSettings(data);
+            setGlobalSettings({ ...defaultSettings, ...data });
         } catch (error) {
-            console.error('Failed to load global settings', error);
+            console.error('Failed to load global settings, using fallback mocked data', error);
             // Mock fallback
-            setGlobalSettings({
-                pdn_flags: { phone: true, email: true, card: true, fio: false },
-                examples_count: 5, scan_interval_hours: 24,
-                exclude_index_patterns: ['.kibana', '.tasks', '.opensearch-observability'],
-                exclude_index_regexes: ['^\\.ds-logs-.*'],
-                include_index_regexes: ['.*'],
-                mail_service_names: [], unknown_mail_service_parts: [], card_bank_bins_4: [],
-                invalid_def_codes: [], surn_ends_cis: [], surn_ends_world: [], patron_ends: [], fio_special_markers: [],
-                jira_base_url: 'https://jira.bcs.ru', jira_project_key: 'EIB', jira_issue_type: '15400',
-                jira_priority: '4', jira_components: '47920', jira_labels: 'dtsz_auto_pd_discovery',
-                jira_dib_service: 'CMDB-859449', jira_epic_link: 'EIB-15679', jira_cfo: 'CMDB-3968',
-                jira_kipd_type: '68857', jira_task_source: '28834', jira_action_group: '28819',
-                jira_action_type: '28830', jira_process: 'CMDB-2760490', jira_criticality_level: '52414',
-                jira_location_type: '55677', jira_it_system: 'CMDB-1358427', jira_exploit_poc: '68865',
-                jira_cvss_score: 0, jira_column_id: '43720', jira_risk_text: 'Утечка критичных данных',
-                jira_work_description: 'Исключить попадание открытых персональных данных в индексы OpenSearch. Настроить фильтрацию или применение одностороннего хеширования/маскирования для полей, содержащих конфиденциальную информацию.'
-            });
+            setGlobalSettings(defaultSettings);
         } finally {
             setLoadingSettings(false);
         }
@@ -300,6 +303,16 @@ export default function Settings() {
                         <span className="truncate">Исключения индексов</span>
                     </button>
                     <button
+                        onClick={() => setActiveTab('scan_fields')}
+                        className={clsx(
+                            "w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-md transition-colors",
+                            activeTab === 'scan_fields' ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50"
+                        )}
+                    >
+                        <Database className={clsx("w-4 h-4 mr-3 min-w-4", activeTab === 'scan_fields' ? "text-indigo-500" : "text-slate-400")} />
+                        <span className="truncate">Доп. поля (Scan Fields)</span>
+                    </button>
+                    <button
                         onClick={() => setActiveTab('statuses')}
                         className={clsx(
                             "w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-md transition-colors",
@@ -445,6 +458,10 @@ export default function Settings() {
 
                         {activeTab === 'index_exclusions' && (
                             <IndexExceptions />
+                        )}
+
+                        {activeTab === 'scan_fields' && (
+                            <ScanFieldsList />
                         )}
 
                         {activeTab === 'jira' && (

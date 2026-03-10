@@ -1,5 +1,22 @@
 import re
-from typing import List, Any, Dict
+from typing import List, Any, Dict, Optional, Tuple
+
+
+# Fields whose values are typically free-form text containing embedded data
+FREE_TEXT_FIELDS = {
+    "message", "raw_message", "body", "raw_body", "log",
+    "msg", "text", "content", "description", "payload",
+    "request_body", "response_body", "stacktrace", "exception",
+}
+
+# Separators that indicate a structural key-value pattern
+_STRUCTURAL_SEP_PATTERN = re.compile(
+    r'([\w.\-_]{1,60})\s*(?::|\s*=\s*>?|=\'|=")\s*$'
+)
+
+# Max length for a key_hint to be considered non-ambiguous
+_MAX_KEY_HINT_LEN = 30
+
 
 class PDNDetectors:
     @staticmethod
@@ -41,7 +58,7 @@ class PDNDetectors:
                 elif PDNDetectors._is_patronymic(w1, patron_ends) and PDNDetectors._is_surname(w2, surn_ends):
                     is_valid = True
                 
-                # 3. Имя Фамилия Отчество (wait, usually if w3 is patronymic, w2 could be surname. But Russian is flexible)
+                # 3. Имя Фамилия Отчество
                 elif not PDNDetectors._is_surname(w1, surn_ends) and PDNDetectors._is_surname(w2, surn_ends) and PDNDetectors._is_patronymic(w3, patron_ends):
                     is_valid = True
             
@@ -61,10 +78,114 @@ class PDNDetectors:
 
         return results
 
+    @staticmethod
+    def is_free_text_field(field_path: str) -> bool:
+        """Check if the field is a known free-text field by its last path segment."""
+        last_segment = field_path.rsplit(".", 1)[-1] if "." in field_path else field_path
+        # Remove array indices like [0]
+        last_segment = re.sub(r'\[\d+\]$', '', last_segment)
+        return last_segment.lower() in FREE_TEXT_FIELDS
+
+    @staticmethod
+    def _extract_structural_key(text: str, match_start: int, match_end: int) -> Tuple[Optional[str], str]:
+        """
+        Look for a structural key pattern before the match in the text.
+        
+        Returns (key_hint, context_type):
+          - ("phone", "structured_key") if found `phone: <match>` or `phone=<match>`
+          - ("some long phrase here", "ambiguous") if key candidate is too long
+          - (None, "free_text") if no structural key found
+        """
+        # Take up to 80 chars before the match for context analysis
+        prefix_start = max(0, match_start - 80)
+        prefix = text[prefix_start:match_start]
+
+        # Try to find a key-separator pattern right before the match
+        m = _STRUCTURAL_SEP_PATTERN.search(prefix)
+        if m:
+            key_candidate = m.group(1).strip()
+            if len(key_candidate) == 0:
+                return None, "free_text"
+            # Check if key looks like a real key (no spaces, reasonable length)
+            if len(key_candidate) <= _MAX_KEY_HINT_LEN and " " not in key_candidate:
+                return key_candidate, "structured_key"
+            else:
+                return key_candidate[:_MAX_KEY_HINT_LEN], "ambiguous"
+
+        return None, "free_text"
+
+    @staticmethod
+    def _check_nested_pdn(text_fragment: str, rules: List[Any]) -> bool:
+        """
+        Check if a text fragment contains PD (phone, email patterns).
+        Used to sanitize prefix/suffix that might contain adjacent PD.
+        """
+        if not text_fragment:
+            return False
+        # Quick check with basic patterns for phone/email
+        if re.search(r'(?:\+7|8)\s*[\(\-]?\s*\d{3}', text_fragment):
+            return True
+        if re.search(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z]{2,}', text_fragment):
+            return True
+        return False
+
     @classmethod
-    def detect(cls, text: str, field_path: str, rules: List[Any]) -> List[Dict[str, str]]:
+    def _classify_match(cls, text: str, match_value: str, match_start: int, match_end: int,
+                        field_path: str, is_free_text: bool, rules: List[Any]) -> Dict:
+        """
+        Classify a single match with context information.
+
+        Mode A (clean field): regex matches the whole value → structured_key, key_hint = last segment of field_path.
+        Mode B (free text): regex matches part of text → analyze surrounding context.
+        """
+        # Mode A: the match covers most/all of the value (>= 90%)
+        if not is_free_text or len(match_value) >= len(text.strip()) * 0.9:
+            # Clean field — field_path itself is the context
+            last_segment = field_path.rsplit(".", 1)[-1] if "." in field_path else field_path
+            last_segment = re.sub(r'\[\d+\]$', '', last_segment)
+            return {
+                "context_type": "structured_key",
+                "key_hint": last_segment,
+                "prefix_raw": None,
+                "suffix_raw": None,
+            }
+
+        # Mode B: free text analysis
+        # Step 1: Look for a structural key before the match
+        key_hint, context_type = cls._extract_structural_key(text, match_start, match_end)
+
+        # Capture prefix/suffix context for logging (short fragments)
+        prefix_raw = text[max(0, match_start - 50):match_start].strip() or None
+        suffix_raw = text[match_end:match_end + 50].strip() or None
+
+        # Step 3: Check if prefix/suffix themselves contain PD — if so, sanitize
+        if prefix_raw and cls._check_nested_pdn(prefix_raw, rules):
+            prefix_raw = None  # Don't store prefix that contains other PD
+        if suffix_raw and cls._check_nested_pdn(suffix_raw, rules):
+            suffix_raw = None
+
+        return {
+            "context_type": context_type,
+            "key_hint": key_hint,
+            "prefix_raw": prefix_raw,
+            "suffix_raw": suffix_raw,
+        }
+
+    @classmethod
+    def detect(cls, text: str, field_path: str, rules: List[Any],
+               is_free_text: bool = False) -> List[Dict]:
         """
         Main detection method that applies regex rules and exclusions.
+        
+        Returns list of dicts:
+        {
+            "type": "phone",
+            "value": "79265524242",
+            "context_type": "structured_key" | "free_text" | "ambiguous",
+            "key_hint": "client_phone" | None,
+            "prefix_raw": "..." | None,
+            "suffix_raw": "..." | None,
+        }
         """
         surn_ends = ('ов', 'ова', 'ев', 'ева', 'ин', 'ина')
         patron_ends = ('ович', 'евич', 'овна', 'евна')
@@ -92,17 +213,42 @@ class PDNDetectors:
         for r in regex_rules:
             if r.pdn_type == 'fio':
                 # Handle FIO with intelligent analyzer
-                fio_matches = cls.analyze_fio(text, surn_ends, patron_ends)
+                # Load custom endings from rules if available
+                custom_surn_ends = [rule.value for rule in rules if rule.rule_type in ('surn_end_cis', 'surn_end_world')]
+                custom_patron_ends = [rule.value for rule in rules if rule.rule_type == 'patron_end']
+                
+                effective_surn_ends = tuple(custom_surn_ends) if custom_surn_ends else surn_ends
+                effective_patron_ends = tuple(custom_patron_ends) if custom_patron_ends else patron_ends
+                
+                fio_matches = cls.analyze_fio(text, effective_surn_ends, effective_patron_ends)
                 for fm in fio_matches:
-                    matches.append({"type": "fio", "value": fm})
-                # We can also add standard regex match for FIO if defined
+                    # Find position of the FIO match in the text
+                    pos = text.find(fm)
+                    match_start = pos if pos >= 0 else 0
+                    match_end = match_start + len(fm)
+                    
+                    ctx = cls._classify_match(text, fm, match_start, match_end,
+                                              field_path, is_free_text, rules)
+                    matches.append({
+                        "type": "fio",
+                        "value": fm,
+                        **ctx,
+                    })
                 
             try:
                 found = re.finditer(r.value, text)
                 for match in found:
                     val = match.group(0).strip()
                     if val:
-                        matches.append({"type": r.pdn_type, "value": val})
+                        ctx = cls._classify_match(
+                            text, val, match.start(), match.end(),
+                            field_path, is_free_text, rules
+                        )
+                        matches.append({
+                            "type": r.pdn_type,
+                            "value": val,
+                            **ctx,
+                        })
             except re.error:
                 continue
 
@@ -110,7 +256,7 @@ class PDNDetectors:
         unique_matches = []
         seen = set()
         for m in matches:
-            identifier = f"{m['type']}:{m['value']}"
+            identifier = f"{m['type']}:{m['value']}:{m['context_type']}:{m.get('key_hint', '')}"
             if identifier not in seen:
                 seen.add(identifier)
                 unique_matches.append(m)

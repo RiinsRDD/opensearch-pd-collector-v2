@@ -92,7 +92,8 @@ Layout: `Header` (сверху) → `main` (контент) → `ScannerStatusBa
 
 - **Уровень 1**: Паттерн индекса (`bcs-tech-logs-*`). Подсветка при новых данных. Счётчик `new` cache-key. Клик выделяет индекс
 - **Уровень 2**: Тип ПДн (`PHONE`, `EMAIL`, `FIO`, `CARD`)
-- **Уровень 3**: Cache-key (`PDNPattern`). Статус, иконки тегов, счётчик `hit_count`
+- **Уровень 3**: Контекст нахождения (`structured_key` 🔑, `free_text` 📝, `ambiguous` ⚠️). Группирует находки по способу извлечения.
+- **Уровень 4**: Cache-key (`PDNPattern`). Содержит `field_path`, значения `extra_fields` (Scan Fields), статус, иконки тегов, счётчик `hit_count`
 
 **Выделение**: Строго одиночное — один cache_key за раз. Выделение индекса также меняет `selectedIndexPattern`.
 
@@ -159,6 +160,7 @@ interface PDNPattern {
 - **Настройка Jira**: управление параметрами для интеграции (Base URL, ключи проекта, типы задачи, кастомные поля атрибутов для CMDB).
 - **Глобальные исключения** (`GlobalExceptions.tsx`): управление таблицей `regex_rules` (exclude, prefix, suffix, full_path) с динамическими вкладками типов ПДн.
 - **Исключения индексов** (`IndexExceptions.tsx`): управление `IndexKeyExclusion` по каждому отдельному индексу
+- **Доп. поля (Scan Fields)** (`ScanFieldsList.tsx`): управление дополнительными полями (например `kubernetes.container.name`), которые добавляются в Cache Key для изоляции инцидентов по микросервисам.
 - **Статусы и Цвета**: настройка цветов для `StatusSetting`
 - **Управление тегами**: глобальное удаление тегов
 

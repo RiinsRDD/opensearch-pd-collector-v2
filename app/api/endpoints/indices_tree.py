@@ -70,6 +70,7 @@ def get_indices_tree(status: Optional[str] = None, tags: Optional[str] = None, d
                 "pdn_type": p.pdn_type,
                 "context_type": p.context_type,
                 "key_hint": p.key_hint,
+                "extra_fields": p.extra_fields,
                 "hit_count": p.hit_count,
                 "status": p.status,
                 "custom_message": p.custom_message,

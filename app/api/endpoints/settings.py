@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models.settings import SystemSetting, StatusSetting, IndexKeyExclusion, RegexRule
 from app.models.indices import IndexOwner
 from app.models.pdn import PDNPattern
+from app.models.scan_field_config import ScanFieldConfig
 from app.models.tags import Tag, PatternTagLink
 
 router = APIRouter()
@@ -558,3 +559,72 @@ async def get_indices_list(db: AsyncSession = Depends(get_db)):
     all_patterns = sorted(list(set(patterns) | set(owner_patterns)))
     
     return all_patterns
+
+# ==================== Дополнительные поля разграничения (Scan Fields) ====================
+
+class ScanFieldCreate(BaseModel):
+    index_pattern: str = "*"
+    field_path: str
+
+@router.get("/scan-fields")
+async def get_scan_fields(db: AsyncSession = Depends(get_db)):
+    """Получить список всех конфигураций дополнительных полей"""
+    result = await db.execute(select(ScanFieldConfig))
+    configs = result.scalars().all()
+    return [
+        {
+            "id": c.id,
+            "index_pattern": c.index_pattern,
+            "field_path": c.field_path,
+            "is_active": c.is_active,
+            "is_required": c.is_required,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+        }
+        for c in configs
+    ]
+
+@router.post("/scan-fields")
+async def add_scan_field(payload: ScanFieldCreate, db: AsyncSession = Depends(get_db)):
+    """Добавить новое дополнительное поле разграничения"""
+    if not payload.field_path.strip():
+        raise HTTPException(status_code=400, detail="field_path cannot be empty")
+    
+    # Check for duplicates
+    result = await db.execute(
+        select(ScanFieldConfig).filter(
+            ScanFieldConfig.index_pattern == payload.index_pattern,
+            ScanFieldConfig.field_path == payload.field_path,
+        )
+    )
+    if result.scalars().first():
+        raise HTTPException(status_code=400, detail="This field configuration already exists")
+    
+    new_config = ScanFieldConfig(
+        index_pattern=payload.index_pattern.strip(),
+        field_path=payload.field_path.strip(),
+        is_active=True,
+        is_required=False,
+    )
+    db.add(new_config)
+    await db.commit()
+    await db.refresh(new_config)
+    return {"message": "Scan field config added", "data": {
+        "id": new_config.id,
+        "index_pattern": new_config.index_pattern,
+        "field_path": new_config.field_path,
+        "is_required": new_config.is_required,
+    }}
+
+@router.delete("/scan-fields/{config_id}")
+async def delete_scan_field(config_id: int, db: AsyncSession = Depends(get_db)):
+    """Удалить дополнительное поле разграничения (обязательные поля нельзя удалить)"""
+    result = await db.execute(select(ScanFieldConfig).filter(ScanFieldConfig.id == config_id))
+    config = result.scalars().first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Scan field config not found")
+    if config.is_required:
+        raise HTTPException(status_code=403, detail=f"Cannot delete required field: {config.field_path}")
+    
+    await db.delete(config)
+    await db.commit()
+    return {"message": f"Scan field config '{config.field_path}' deleted"}

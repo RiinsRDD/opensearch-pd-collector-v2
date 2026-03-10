@@ -11,6 +11,7 @@ class PDNPattern(Base):
     pdn_type = Column(String, nullable=False)
     context_type = Column(String, nullable=False) # structured_key / free_text / ambiguous
     key_hint = Column(String, nullable=True)
+    extra_fields = Column(JSON, nullable=True)  # {"NameOfMicroService": "auth-svc", "kubernetes.container.name": "api-gw"}
 
     first_seen = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime, default=datetime.utcnow)

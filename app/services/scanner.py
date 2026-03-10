@@ -3,10 +3,12 @@ import hashlib
 from datetime import datetime
 import json
 import logging
+import fnmatch
 from app.services.detectors import PDNDetectors
 from app.services.opensearch_client import OpenSearchClient
 from app.models.pdn import PDNPattern, PDNFinding
 from app.models.settings import RegexRule, IndexKeyExclusion
+from app.models.scan_field_config import ScanFieldConfig
 from app.models.tags import Tag, PatternTagLink
 from app.models.logs import ScannerLog
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +16,7 @@ from sqlalchemy.future import select
 from sqlalchemy import delete
 
 logger = logging.getLogger(__name__)
+
 
 class ScannerService:
     def __init__(self, opensearch_client: OpenSearchClient):
@@ -37,16 +40,64 @@ class ScannerService:
             results.append((path, str(obj)))
         return results
 
-    def _calculate_cache_key(self, index_pattern: str, field_path: str, pdn_type: str, match_value: str) -> str:
+    def _calculate_cache_key(
+        self,
+        index_pattern: str,
+        field_path: str,
+        pdn_type: str,
+        context_type: str,
+        key_hint: Optional[str],
+        extra_fields_values: Dict[str, str],
+    ) -> str:
         """
         Вычисление cache_key (SHA256).
-        Для группировки используем ключ = SHA256(index_pattern + field_path + pdn_type)
-        (Чтобы все телефоны в одном поле индекса падали в 1 cache_key)
+        
+        Формула:
+        structured_key: SHA256(index_pattern + field_path + pdn_type + key_hint + extra_field_vals...)
+        free_text:      SHA256(index_pattern + field_path + pdn_type + "free_text" + extra_field_vals...)
+        ambiguous:      SHA256(index_pattern + field_path + pdn_type + "ambiguous" + extra_field_vals...)
         """
-        raw = f"{index_pattern}|{field_path}|{pdn_type}"
+        if context_type == "structured_key":
+            context_part = key_hint or ""
+        else:
+            context_part = context_type  # "free_text" or "ambiguous"
+
+        # Sort extra fields by key for deterministic hashing
+        extra_parts = "|".join(
+            extra_fields_values.get(k, "")
+            for k in sorted(extra_fields_values.keys())
+        )
+        
+        raw = f"{index_pattern}|{field_path}|{pdn_type}|{context_part}|{extra_parts}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
-    async def _get_active_rules(self, db: AsyncSession) -> tuple[List[RegexRule], List[IndexKeyExclusion]]:
+    def _extract_extra_fields(
+        self, source: Dict[str, Any], scan_field_configs: List[ScanFieldConfig], index_pattern: str
+    ) -> Dict[str, str]:
+        """
+        Extract values of additional fields from the document source.
+        Returns dict like {"NameOfMicroService": "auth-svc", "kubernetes.container.name": "api-gw"}.
+        """
+        result = {}
+        for config in scan_field_configs:
+            # Check if this config applies to this index
+            if config.index_pattern != "*" and not fnmatch.fnmatch(index_pattern, config.index_pattern):
+                continue
+            
+            # Navigate dot-notation path in the source document
+            value = source
+            for part in config.field_path.split("."):
+                if isinstance(value, dict):
+                    value = value.get(part)
+                else:
+                    value = None
+                    break
+            
+            result[config.field_path] = str(value) if value is not None else ""
+        
+        return result
+
+    async def _get_active_rules(self, db: AsyncSession) -> tuple:
         # Получаем все активные правила (регулярки, глобальные исключения ключей, и т.д.)
         result_rules = await db.execute(select(RegexRule).filter(RegexRule.is_active == True))
         global_rules = result_rules.scalars().all()
@@ -54,7 +105,11 @@ class ScannerService:
         result_exclusions = await db.execute(select(IndexKeyExclusion).filter(IndexKeyExclusion.is_active == True))
         index_exclusions = result_exclusions.scalars().all()
         
-        return global_rules, index_exclusions
+        # Load scan field configs
+        result_configs = await db.execute(select(ScanFieldConfig).filter(ScanFieldConfig.is_active == True))
+        scan_field_configs = result_configs.scalars().all()
+        
+        return global_rules, index_exclusions, scan_field_configs
 
     async def _apply_tag(self, db: AsyncSession, cache_key: str, tag_code: str):
         # Находим Tag по имени
@@ -93,7 +148,7 @@ class ScannerService:
         """
         Осуществляет сканирование OpenSearch индекса(ов) по маске.
         """
-        global_rules, index_exclusions = await self._get_active_rules(db)
+        global_rules, index_exclusions, scan_field_configs = await self._get_active_rules(db)
         
         # Индексные исключения для текущего индекса
         current_index_exclusions = [e for e in index_exclusions if e.index_pattern == index_pattern]
@@ -108,10 +163,12 @@ class ScannerService:
             doc_id = doc.get("_id")
             _index = doc.get("_index")
             
+            # Extract extra fields from the document
+            extra_fields_values = self._extract_extra_fields(source, scan_field_configs, index_pattern)
+            
             flat_items = self._traverse(source)
             for path, val in flat_items:
                 # 1. Сначала фильтруем по index_exclusions
-                # Если путь есть в полных исключениях индекса для конкретного типа (или всех), пропустим
                 skip_path = False
                 for exc in current_index_exclusions:
                     if exc.key_path == path and exc.pdn_type in ('all', 'any'):
@@ -120,19 +177,29 @@ class ScannerService:
                 if skip_path:
                     continue
 
-                # 2. Вызываем детектор. Для каждого найденного ПДн он уже проверит глобальные исключения путей и префиксов/суффиксов.
-                detector_matches = self.detectors.detect(val, path, global_rules)
+                # Determine if this field is a free-text field
+                is_free_text = PDNDetectors.is_free_text_field(path)
+
+                # 2. Вызываем детектор с is_free_text flag
+                detector_matches = self.detectors.detect(val, path, global_rules, is_free_text=is_free_text)
                 
                 # Применяем фильтр по index_type 
                 for match in detector_matches:
                     pdn_type = match['type']
                     match_val = match['value']
+                    context_type = match['context_type']
+                    key_hint = match.get('key_hint')
+                    prefix_raw = match.get('prefix_raw')
+                    suffix_raw = match.get('suffix_raw')
 
-                    # Второе: исключили ли мы этот ПДн тип для этого пути индекса?
+                    # Исключили ли мы этот ПДн тип для этого пути индекса?
                     if any(exc.key_path == path and exc.pdn_type == pdn_type for exc in current_index_exclusions):
                         continue
 
-                    cache_key = self._calculate_cache_key(index_pattern, path, pdn_type, match_val)
+                    cache_key = self._calculate_cache_key(
+                        index_pattern, path, pdn_type,
+                        context_type, key_hint, extra_fields_values
+                    )
 
                     # 3. Работа с БД (PDNPattern & PDNFinding)
                     pattern_result = await db.execute(select(PDNPattern).filter(PDNPattern.cache_key == cache_key))
@@ -144,7 +211,9 @@ class ScannerService:
                             index_pattern=index_pattern,
                             field_path=path,
                             pdn_type=pdn_type,
-                            context_type="structured_key", # TODO: enhance heuristic if needed
+                            context_type=context_type,
+                            key_hint=key_hint,
+                            extra_fields=extra_fields_values if extra_fields_values else None,
                             hit_count=1,
                             status="new"
                         )
@@ -157,8 +226,7 @@ class ScannerService:
                     # Привязываем тег к паттерну
                     patterns_to_update.add(cache_key)
 
-                    # Добавляем finding, если паттерн "new" (ограничиваем, скажем, чтоб не лопнула база)
-                    # Либо если мы обновляем (update examples)
+                    # Добавляем finding с prefix/suffix context
                     if pattern.status == "new":
                         finding = PDNFinding(
                             cache_key=cache_key,
@@ -166,6 +234,8 @@ class ScannerService:
                             index_pattern=_index,
                             raw_value=match_val,
                             field_path=path,
+                            prefix_raw=prefix_raw,
+                            suffix_raw=suffix_raw,
                             full_document=source
                         )
                         db.add(finding)
@@ -173,7 +243,6 @@ class ScannerService:
         # Теги и коммиты
         if not is_global and scan_type_tag == 'S':
              # Очистить теги 'S' для старых паттернов этого индекса
-             # Сначала получаем все паттерны индекса
              result_all_idx_patterns = await db.execute(select(PDNPattern.cache_key).filter(PDNPattern.index_pattern == index_pattern))
              all_cache_keys_for_index = result_all_idx_patterns.scalars().all()
              await self._clear_single_scan_tags(db, all_cache_keys_for_index)
@@ -188,7 +257,6 @@ class ScannerService:
         """
         Глобальное сканирование.
         """
-        # Пока примем, что indices - список всех актуальных паттернов, которые нужно сканировать.
         if not indices:
             indices = ["*"]
 
@@ -199,7 +267,6 @@ class ScannerService:
             await db.commit()
             
             try:
-                # В глобальном режиме сканируем, вешаем тег 'G'
                 findings = await self.scan_index(db, index_pattern, max_docs=1000, is_global=True, scan_type_tag='G')
                 total_findings += findings
                 
