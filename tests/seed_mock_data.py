@@ -21,7 +21,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from loguru import logger
 from sqlalchemy import delete, select
 
-from app.api.deps import get_password_hash
+import bcrypt
+
 from app.db.session import async_session_maker
 from app.models.indices import IndexOwner
 from app.models.pdn import PDNFinding, PDNPattern
@@ -178,7 +179,7 @@ async def _upsert_users(session) -> None:
     for username, password, role in DEMO_USERS:
         result = await session.execute(select(User).filter(User.username == username))
         user = result.scalars().first()
-        password_hash = get_password_hash(password)
+        password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         if user:
             user.password_hash = password_hash
             user.role = role
