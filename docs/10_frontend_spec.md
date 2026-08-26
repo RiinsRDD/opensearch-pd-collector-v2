@@ -54,8 +54,9 @@ frontend/
     │       └── IndicesTree.tsx        # Компонент дерева индексов (Explorer)
     ├── pages/
     │   ├── Dashboard.tsx              # Главная страница (Master-Detail layout)
-    │   ├── Settings.tsx               # Страница настроек
-    │   └── Tasks.tsx                  # Страница глобальных задач Jira
+    │   ├── Settings.tsx               # Страница настроек (fallback defaults при ошибке API)
+    │   └── Tasks.tsx                  # Глобальная история: GET /indices/jira/history
+
     ├── assets/                        # Статические ресурсы
     └── utils/                         # Утилиты (пока пусто)
 ```
@@ -66,8 +67,10 @@ frontend/
 |------|-----------|----------|
 | `/` | `Dashboard` | Главная: дерево + детали |
 | `/settings` | `Settings` | Настройки системы |
-| `/tasks` | `Tasks` | Глобальная история задач |
+| `/tasks` | `Tasks` | Глобальная история задач (`indicesApi.getJiraHistory`) |
 | `*` | `Navigate to "/"` | Редирект на главную |
+
+Роута `/login` нет, guard по JWT нет.
 
 Layout: `Header` (сверху) → `main` (контент) → `ScannerStatusBar` (внизу). Всё обёрнуто в `SelectionProvider`.
 
@@ -82,7 +85,7 @@ Layout: `Header` (сверху) → `main` (контент) → `ScannerStatusBa
 - **Кнопка «Завести задачу в Jira»**: Активна при `selectedPatterns.length > 0` ИЛИ `selectedIndexPattern !== null`. Показывает счётчик `confirmed`
 - **Поиск** по хэшам/индексам (input)
 - **Уведомления** (Bell icon с красным dot)
-- **Меню профиля** (dropdown): «Настройки системы» (`/settings`), «Мои Задачи Jira» (`/tasks`), «Выйти»
+- **Меню профиля** (dropdown): заголовок «Admin User» захардкожен (не `/auth/me`). Пункты: «Настройки системы» (`/settings`), «Мои Задачи Jira» (`/tasks`), «Выйти» (без сброса токена)
 
 ### `Sidebar.tsx` (`components/layout/`)
 
@@ -94,12 +97,9 @@ Layout: `Header` (сверху) → `main` (контент) → `ScannerStatusBa
 
 ### `IndicesTree.tsx` (`components/tree/`)
 
-Основной компонент дерева (~18 KB). Иерархическая структура:
+Основной компонент дерева. Иерархия в UI: индекс → тип ПДн → cache_key.
 
-- **Уровень 1**: Паттерн индекса (`bcs-tech-logs-*`). Счётчик новых заданий (красный бейдж `+5`). Клик выделяет индекс, двойной клик сворачивает/разворачивает.
-- **Уровень 2**: Тип ПДн (`PHONE`, `EMAIL`, `FIO`, `CARD`)
-- **Уровень 3**: Контекст нахождения (`base` 📄, `structured_key` 🔑, `free_text` 📝, `ambiguous` ⚠️).
-- **Уровень 4**: Cache-key (`PDNPattern`). Содержит статусные точки, `field_path`, inline-бейджи и значения `extra_fields` (Scan Fields), иконки тегов.
+**Данные:** сейчас рендерится захардкоженный `mockData` внутри `IndicesTree.tsx`. `GET /api/v1/indices` деревом не вызывается. Это сознательный UI-stub, не live API.
 
 **Выделение**: Строго одиночное — один cache_key за раз. Выделение индекса также меняет `selectedIndexPattern`.
 
@@ -151,8 +151,8 @@ interface PDNPattern {
 - **Правая панель** (flex-1): зависит от выделения:
   - **Если выбран cache_key** → 3 вкладки:
     1. **Паттерн**: статистика, статус (dropdown select), теги, кнопки действий, поле для custom_message
-    2. **Примеры**: закэшированные контексты (doc_id, raw_value, field_path)
-    3. **Сырой документ**: JSON-viewer через `react-json-view-lite`
+    2. **Примеры**: `pattern.examples` (`raw_value[]` с бэкенда; в stub-дереве тоже строки)
+    3. **Сырой документ**: `pattern.full_document` через `react-json-view-lite`. Если `null`/нет — текст «Нет сырого документа», без фейкового JSON. Подсветки найденного значения в JSON нет.
   - **Если выбран индекс** → таблица задач Jira с поиском, кнопка «Одиночное сканирование»
   - **Если ничего не выбрано** → заглушка «Выберите элемент»
 
@@ -197,25 +197,28 @@ interface SelectionContextType {
 
 ### API-клиент (`api/client.ts`)
 
-Axios-инстанс с `baseURL = VITE_API_BASE_URL || '/api/v1'`:
+Axios-инстанс с `baseURL = VITE_API_BASE_URL || '/api/v1'`. **Нет** request interceptor с Bearer и **нет** редиректа на `/login` при 401.
 
 ```typescript
 export const indicesApi = {
-    getTree: () => apiClient.get('/indices')
+    getTree: (status?: string, tags?: string) => apiClient.get('/indices', { params: { status, tags } }),
+    updateExamples: (cacheKey: string) => apiClient.post(`/indices/examples/update/${cacheKey}`),
+    createJiraTasks: (data: { cache_keys: string[]; custom_message?: string }) => apiClient.post('/indices/jira/tasks', data),
+    getJiraTasksByIndex: (indexPattern: string) => apiClient.get(`/indices/jira/tasks/${encodeURIComponent(indexPattern)}`),
+    getJiraHistory: (limit = 100, page = 1) => apiClient.get('/indices/jira/history', { params: { limit, page } }),
+    updatePattern: (cacheKey: string, data: { status?: string; custom_message?: string }) => apiClient.patch(`/indices/${cacheKey}`, data),
+    deletePattern: (cacheKey: string) => apiClient.delete(`/indices/${cacheKey}`),
+};
+
+export const scannerApi = {
+    triggerScan: (indexPattern: string, params: { hours: number; maxDocs: number }) => apiClient.post(`/scanner/scan/${encodeURIComponent(indexPattern)}`, params),
+    getStatus: () => apiClient.get('/scanner/status'),
+    getLogs: (limit = 50) => apiClient.get('/scanner/logs', { params: { limit } }),
 };
 
 export const settingsApi = {
-    getSettings: () => apiClient.get('/settings')
-};
-
-export const exclusionsApi = {
-    getGlobal: () => apiClient.get('/settings/exclusions/global'),
-    addGlobal: (data) => apiClient.post('/settings/exclusions/global', data),
-    deleteGlobal: (id) => apiClient.delete(`/settings/exclusions/global/${id}`),
-    getIndex: (indexPattern) => apiClient.get('/settings/exclusions/index', { params: { index_pattern: indexPattern } }),
-    addIndex: (data) => apiClient.post('/settings/exclusions/index', data),
-    deleteIndex: (id) => apiClient.delete(`/settings/exclusions/index/${id}`),
-    getIndicesList: () => apiClient.get('/settings/exclusions/indices-list')
+    getSettings: () => apiClient.get('/settings/global'),
+    saveSettings: (data) => apiClient.post('/settings/global', data)
 };
 ```
 

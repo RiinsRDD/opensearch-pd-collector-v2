@@ -1,19 +1,7 @@
 import { useState, useMemo } from 'react';
-import { ChevronRight, ChevronDown, Folder, Hash, Key, FileText, AlertTriangle, File, Filter } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, Hash, Key, FileText, AlertTriangle, File, Filter, Activity } from 'lucide-react';
 import clsx from 'clsx';
-
-export interface PDNPattern {
-    cache_key: string;
-    field_path: string;
-    pdn_type: string;
-    hit_count: number;
-    status: 'new' | 'confirmed' | 'done' | 'false_positive' | 'unverified' | 'archived';
-    tags: string[];
-    is_free_text?: boolean;
-    context_type?: 'structured_key' | 'free_text' | 'ambiguous' | 'base';
-    key_hint?: string;
-    extra_fields?: Record<string, string>;
-}
+import type { PDNPattern } from '../../types/api';
 
 export interface TypeNode {
     type: string;
@@ -33,6 +21,7 @@ interface IndicesTreeProps {
     onSelectPatterns: (patterns: PDNPattern[], indexPattern?: string) => void;
     selectedCacheKeys: string[];
     selectedIndexPattern: string | null;
+    scanningIndexPattern?: string | null;
 }
 
 const mockData: IndexPatternNode[] = [
@@ -48,33 +37,43 @@ const mockData: IndexPatternNode[] = [
                 patterns: [
                     {
                         cache_key: 'a8f2c184', field_path: 'req.body.client_phone', pdn_type: 'PHONE',
-                        is_free_text: false, context_type: 'base',
+                        index_pattern: 'bcs-tech-logs-*', context_type: 'base', key_hint: null,
                         extra_fields: { 'NameOfMicroService': 'auth-svc', 'kubernetes.container.name': 'api-gw' },
-                        hit_count: 12, status: 'new', tags: []
+                        hit_count: 12, status: 'new', custom_message: null,
+                        tags: [], examples: ['79265554433', '79261234567', '79268889999'],
+                        has_jira_task: false,
                     },
                     {
                         cache_key: 'c4e9b321', field_path: 'user.phone', pdn_type: 'PHONE',
-                        is_free_text: false, context_type: 'base',
+                        index_pattern: 'bcs-tech-logs-*', context_type: 'base', key_hint: null,
                         extra_fields: { 'NameOfMicroService': 'user-svc', 'kubernetes.container.name': 'main-app' },
-                        hit_count: 5, status: 'confirmed', tags: []
+                        hit_count: 5, status: 'confirmed', custom_message: null,
+                        tags: [], examples: ['79261234567'],
+                        has_jira_task: true,
                     },
                     {
                         cache_key: 'f1a2b349', field_path: 'message', pdn_type: 'PHONE',
-                        is_free_text: true, context_type: 'structured_key', key_hint: 'phone',
+                        index_pattern: 'bcs-tech-logs-*', context_type: 'structured_key', key_hint: 'phone',
                         extra_fields: { 'NameOfMicroService': 'api-gw', 'kubernetes.container.name': 'worker-pod' },
-                        hit_count: 8, status: 'new', tags: []
+                        hit_count: 8, status: 'new', custom_message: null,
+                        tags: [], examples: ['79265554433', '79268889999', '79261112222'],
+                        has_jira_task: false,
                     },
                     {
                         cache_key: 'd7c8e1a2', field_path: 'message', pdn_type: 'PHONE',
-                        is_free_text: true, context_type: 'free_text',
+                        index_pattern: 'bcs-tech-logs-*', context_type: 'free_text', key_hint: null,
                         extra_fields: { 'NameOfMicroService': 'logger-svc', 'kubernetes.container.name': 'logger-pod' },
-                        hit_count: 3, status: 'confirmed', tags: []
+                        hit_count: 3, status: 'confirmed', custom_message: null,
+                        tags: [], examples: ['79261234567'],
+                        has_jira_task: false,
                     },
                     {
                         cache_key: 'b2a1c4df', field_path: 'raw_message', pdn_type: 'PHONE',
-                        is_free_text: true, context_type: 'ambiguous', key_hint: 'данные клиента',
+                        index_pattern: 'bcs-tech-logs-*', context_type: 'ambiguous', key_hint: 'данные клиента',
                         extra_fields: { 'NameOfMicroService': 'api-gw', 'kubernetes.container.name': 'api-gw' },
-                        hit_count: 1, status: 'new', tags: []
+                        hit_count: 1, status: 'new', custom_message: null,
+                        tags: [], examples: ['79265554433'],
+                        has_jira_task: false,
                     }
                 ]
             },
@@ -84,15 +83,19 @@ const mockData: IndexPatternNode[] = [
                 patterns: [
                     {
                         cache_key: 'e5f6a7b8', field_path: 'metadata.user.email', pdn_type: 'EMAIL',
-                        is_free_text: false, context_type: 'base',
+                        index_pattern: 'bcs-tech-logs-*', context_type: 'base', key_hint: null,
                         extra_fields: { 'NameOfMicroService': 'auth-svc', 'kubernetes.container.name': 'auth-pod' },
-                        hit_count: 9, status: 'new', tags: []
+                        hit_count: 9, status: 'new', custom_message: null,
+                        tags: [], examples: ['test@bcs.ru', 'admin@bcs.ru'],
+                        has_jira_task: false,
                     },
                     {
                         cache_key: 'a1b2c3d4', field_path: 'log.body', pdn_type: 'EMAIL',
-                        is_free_text: true, context_type: 'structured_key', key_hint: 'email',
+                        index_pattern: 'bcs-tech-logs-*', context_type: 'structured_key', key_hint: 'email',
                         extra_fields: { 'NameOfMicroService': 'mailer-svc', 'kubernetes.container.name': 'mail-pod' },
-                        hit_count: 5, status: 'unverified', tags: []
+                        hit_count: 5, status: 'unverified', custom_message: null,
+                        tags: [], examples: ['user@example.com'],
+                        has_jira_task: false,
                     }
                 ]
             }
@@ -106,7 +109,7 @@ const mockData: IndexPatternNode[] = [
     }
 ];
 
-export default function IndicesTree({ onSelectPatterns, selectedCacheKeys, selectedIndexPattern }: IndicesTreeProps) {
+export default function IndicesTree({ onSelectPatterns, selectedCacheKeys, selectedIndexPattern, scanningIndexPattern }: IndicesTreeProps) {
     const [expandedIndices, setExpandedIndices] = useState<Record<string, boolean>>({});
     const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>({});
     const [filterText, setFilterText] = useState('');
@@ -119,7 +122,7 @@ export default function IndicesTree({ onSelectPatterns, selectedCacheKeys, selec
             const filteredTypes = idx.types.map(t => {
                 const filteredPatterns = t.patterns.filter(p =>
                     p.status.toLowerCase().includes(lowerFilter) ||
-                    p.tags.some(tag => tag.toLowerCase().includes(lowerFilter)) ||
+                    p.tags.some(tag => tag.name.toLowerCase().includes(lowerFilter)) ||
                     p.field_path.toLowerCase().includes(lowerFilter) ||
                     (p.key_hint && p.key_hint.toLowerCase().includes(lowerFilter)) ||
                     (p.extra_fields && Object.values(p.extra_fields).some(val => val.toLowerCase().includes(lowerFilter)))
@@ -213,6 +216,12 @@ export default function IndicesTree({ onSelectPatterns, selectedCacheKeys, selec
                                     {isIdxExpanded ? <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0 group-hover:text-slate-600" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0 group-hover:text-slate-600" />}
                                 </div>
                                 <Folder className="w-4 h-4 mr-1.5 shrink-0 text-amber-500" />
+                                {/* ИНДИКАТОР СКАНИРОВАНИЯ */}
+                                {scanningIndexPattern === idxNode.index_pattern && (
+                                    <span className="ml-2 flex items-center">
+                                        <Activity className="w-3.5 h-3.5 text-blue-500 animate-pulse" />
+                                    </span>
+                                )}
                                 <span className={clsx("truncate", isIdxSelected ? "font-semibold" : "")}>
                                     {idxNode.index_pattern}
                                 </span>
@@ -268,22 +277,19 @@ export default function IndicesTree({ onSelectPatterns, selectedCacheKeys, selec
                                                                     onClick={(e) => handlePatternClick(e, pattern)}
                                                                 >
                                                                     <div className="flex items-center">
-                                                                        {/* Иконка */}
-                                                                        {pattern.is_free_text ? (
-                                                                            pattern.context_type === 'structured_key' ? <Key className="w-3.5 h-3.5 mr-2 text-emerald-500 shrink-0" /> :
-                                                                                pattern.context_type === 'free_text' ? <FileText className="w-3.5 h-3.5 mr-2 text-blue-500 shrink-0" /> :
-                                                                                    <AlertTriangle className="w-3.5 h-3.5 mr-2 text-amber-500 shrink-0" />
-                                                                        ) : (
-                                                                            <File className="w-3.5 h-3.5 mr-2 text-emerald-500 shrink-0" />
-                                                                        )}
+{/* Иконка */}
+                                                                         {pattern.context_type === 'structured_key' ? <Key className="w-3.5 h-3.5 mr-2 text-emerald-500 shrink-0" /> :
+                                                                             pattern.context_type === 'free_text' ? <FileText className="w-3.5 h-3.5 mr-2 text-blue-500 shrink-0" /> :
+                                                                                 pattern.context_type === 'ambiguous' ? <AlertTriangle className="w-3.5 h-3.5 mr-2 text-amber-500 shrink-0" /> :
+                                                                                     <File className="w-3.5 h-3.5 mr-2 text-emerald-500 shrink-0" />}
 
-                                                                        {/* Имя поля */}
+                                                                         {/* Имя поля */}
                                                                         <span className={clsx("text-[13px] tracking-tight", isSelected ? "text-blue-900 font-semibold" : "text-slate-700 font-medium")}>
                                                                             {pattern.field_path}
                                                                         </span>
 
-                                                                        {/* Бейджи контекста INLINE (для Mode B) */}
-                                                                        {pattern.is_free_text && (
+{/* Бейджи контекста INLINE (для Mode B) */}
+                                                                         {pattern.context_type !== 'base' && (
                                                                             <div className="flex items-center ml-2 space-x-1.5">
                                                                                 {pattern.context_type === 'structured_key' && (
                                                                                     <>
@@ -311,9 +317,9 @@ export default function IndicesTree({ onSelectPatterns, selectedCacheKeys, selec
                                                                         {pattern.status === 'confirmed' && <span className="ml-2 w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 shadow-sm" />}
                                                                     </div>
 
-                                                                    {/* Дополнительные поля (Extra fields & Key hints for Mode A) */}
-                                                                    <div className="mt-1.5 ml-[26px] flex flex-wrap gap-1.5">
-                                                                        {!pattern.is_free_text && pattern.key_hint && (
+{/* Дополнительные поля (Extra fields & Key hints for Mode A) */}
+                                                                     <div className="mt-1.5 ml-[26px] flex flex-wrap gap-1.5">
+                                                                         {pattern.context_type === 'structured_key' && pattern.key_hint && (
                                                                             <span className="text-[10px] px-1.5 py-[3px] bg-emerald-50 text-emerald-600 rounded-lg border border-emerald-200 leading-none shadow-sm font-medium">
                                                                                 key: {pattern.key_hint}
                                                                             </span>

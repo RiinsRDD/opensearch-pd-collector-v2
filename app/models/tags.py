@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.models.base import Base
 
@@ -17,3 +18,5 @@ class PatternTagLink(Base):
     pattern_cache_key = Column(String, ForeignKey("pdn_patterns.cache_key"), primary_key=True)
     tag_id = Column(Integer, ForeignKey("tags.id"), primary_key=True)
     assigned_at = Column(DateTime, default=datetime.utcnow)
+
+    tag = relationship("Tag")

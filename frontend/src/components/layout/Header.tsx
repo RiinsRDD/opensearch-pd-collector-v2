@@ -1,16 +1,39 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Bell, Search, Settings, CheckSquare, ChevronDown, Database } from 'lucide-react';
+import { Bell, Search, Settings, CheckSquare, ChevronDown, Database, X } from 'lucide-react';
 import { useSelection } from '../../context/SelectionContext';
+import { indicesApi } from '../../api/client';
+import type { PDNPattern } from '../../types/api';
 
 export default function Header() {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const { selectedPatterns, selectedIndexPattern } = useSelection();
+    const [isJiraModalOpen, setIsJiraModalOpen] = useState(false);
+    const [jiraComment, setJiraComment] = useState('');
+    const { selectedPatterns, selectedIndexPattern, setSelectedPatterns } = useSelection();
 
     // Кнопка активна если выделен хотя бы один пример ИЛИ если выбран индекс целиком в дереве (selectedIndexPattern)
     const hasSelection = selectedPatterns.length > 0 || selectedIndexPattern !== null;
     // Для Jira берутся только confirmed
     const confirmedCount = selectedPatterns.filter(p => p.status === 'confirmed').length;
+
+    const handleCreateJiraTask = async () => {
+        const cacheKeys = selectedPatterns.filter(p => p.status === 'confirmed').map(p => p.cache_key);
+        if (cacheKeys.length === 0) {
+            alert('Нет confirmed паттернов для создания задачи');
+            return;
+        }
+        try {
+            await indicesApi.createJiraTasks({ cache_keys: cacheKeys, custom_message: jiraComment });
+            setIsJiraModalOpen(false);
+            setJiraComment('');
+            // Обновить дерево через перезагрузку контекста (has_jira_task = true)
+            const updated = selectedPatterns.map((p: PDNPattern) => cacheKeys.includes(p.cache_key) ? ({ ...p, has_jira_task: true } as PDNPattern) : p);
+            setSelectedPatterns(updated);
+        } catch (error) {
+            console.error('Failed to create Jira task:', error);
+            alert('Ошибка при создании задачи в Jira');
+        }
+    };
 
     return (
         <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 shadow-sm z-20 text-slate-200">
@@ -37,6 +60,7 @@ export default function Header() {
                 {/* Глобальная кнопка заведения задачи */}
                 <button
                     disabled={!hasSelection}
+                    onClick={() => setIsJiraModalOpen(true)}
                     className="disabled:opacity-50 disabled:cursor-not-allowed group relative px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-md shadow-sm transition-colors hidden md:block mr-2"
                 >
                     Завести задачу в Jira
@@ -95,6 +119,39 @@ export default function Header() {
                         </div>
                     )}
                 </div>
+
+                {/* Jira Modal */}
+                {isJiraModalOpen && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setIsJiraModalOpen(false)}>
+                        <div className="bg-white rounded-lg p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-lg font-semibold">Создать задачу в Jira</h3>
+                                <button onClick={() => setIsJiraModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <p className="text-sm text-slate-600 mb-4">
+                                Выбрано паттернов: {selectedPatterns.length} ({confirmedCount} confirmed)
+                            </p>
+                            <textarea
+                                value={jiraComment}
+                                onChange={e => setJiraComment(e.target.value)}
+                                placeholder="Дополнительный комментарий к задаче..."
+                                className="w-full p-3 border border-slate-300 rounded mb-4"
+                                rows={4}
+                            />
+                            <div className="flex justify-end space-x-3">
+                                <button onClick={() => setIsJiraModalOpen(false)} className="px-4 py-2 border border-slate-300 rounded hover:bg-slate-50 transition-colors">Отмена</button>
+                                <button
+                                    onClick={handleCreateJiraTask}
+                                    className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors"
+                                >
+                                    Создать задачу
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </header>
     );

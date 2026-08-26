@@ -2,10 +2,12 @@ import { useState, useRef, useEffect } from 'react';
 import IndicesTree from '../components/tree/IndicesTree';
 import { JsonView, defaultStyles } from 'react-json-view-lite';
 import 'react-json-view-lite/dist/index.css';
-import { FileText, Database, ShieldAlert, Clock, Tag, CheckSquare, Search, ChevronRight, Key, AlertTriangle } from 'lucide-react';
+import { FileText, Database, ShieldAlert, Clock, Tag, CheckSquare, Search, ChevronRight, Key, AlertTriangle, RefreshCw, Trash2, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 import { useSelection } from '../context/SelectionContext';
 import SingleScanModal from '../components/modals/SingleScanModal';
+import { indicesApi, scannerApi } from '../api/client';
+import type { PDNPattern, ScannerStatus as ScannerStatusType } from '../types/api';
 
 export default function Dashboard() {
     const { selectedPatterns, setSelectedPatterns, selectedIndexPattern, setSelectedIndexPattern } = useSelection();
@@ -13,7 +15,23 @@ export default function Dashboard() {
     const [taskSearch, setTaskSearch] = useState('');
     const [isSingleScanModalOpen, setIsSingleScanModalOpen] = useState(false);
     const [sidebarWidth, setSidebarWidth] = useState(350);
+    const [treeReloadKey, setTreeReloadKey] = useState(0);
+    const [scannerStatus, setScannerStatus] = useState<ScannerStatusType>({ status: 'idle', current_index_pattern: null, eta: null });
     const isResizing = useRef(false);
+
+    useEffect(() => {
+        const fetchScannerStatus = async () => {
+            try {
+                const data = await scannerApi.getStatus();
+                setScannerStatus(data);
+            } catch (e) {
+                console.error('Failed to fetch scanner status:', e);
+            }
+        };
+        fetchScannerStatus();
+        const interval = setInterval(fetchScannerStatus, 10000);
+        return () => clearInterval(interval);
+    }, []);
 
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
@@ -46,29 +64,67 @@ export default function Dashboard() {
         document.body.style.userSelect = 'none';
     };
 
-    // Берем для отображения деталей первый выделенный элемент
     const primaryPattern = selectedPatterns.length > 0 ? selectedPatterns[0] : null;
 
-    // Моковый сырой документ
-    const mockRawDocument = {
-        _id: "a1b2c3d4e5f6g7h8",
-        _index: "bcs-tech-logs-2023.10.25",
-        "@timestamp": "2023-10-25T14:30:00Z",
-        level: "INFO",
-        logger: "UserService",
-        req: {
-            method: "POST",
-            url: "/api/users/profile",
-            body: {
-                client_phone: "79265554433",
-                email: "test@bcs.ru",
-                metadata: {
-                    session_id: "xyz123",
-                    ip: "192.168.1.1"
-                }
-            }
+    const handleStatusChange = async (newStatus: string) => {
+        if (!primaryPattern) return;
+        try {
+            await indicesApi.updatePattern(primaryPattern.cache_key, { status: newStatus });
+            const updated = selectedPatterns.map((p: PDNPattern) => p.cache_key === primaryPattern.cache_key ? { ...p, status: newStatus as PDNPattern['status'] } : p);
+            setSelectedPatterns(updated);
+        } catch (error) {
+            console.error('Failed to update status:', error);
+            alert('Ошибка при изменении статуса');
         }
     };
+
+    const handleUpdateExamples = async () => {
+        if (!primaryPattern) return;
+        try {
+            await indicesApi.updateExamples(primaryPattern.cache_key);
+            setTreeReloadKey((k: number) => k + 1);
+        } catch (error) {
+            console.error('Failed to update examples:', error);
+            alert('Ошибка при обновлении примеров');
+        }
+    };
+
+    const handleDeletePattern = async () => {
+        if (!primaryPattern) return;
+        if (!confirm('Удалить паттерн и все примеры?')) return;
+        try {
+            await indicesApi.deletePattern(primaryPattern.cache_key);
+            setSelectedPatterns([]);
+            setTreeReloadKey((k: number) => k + 1);
+        } catch (error) {
+            console.error('Failed to delete pattern:', error);
+            alert('Ошибка при удалении паттерна');
+        }
+    };
+
+    const handleFalsePositive = async () => {
+        if (!primaryPattern) return;
+        try {
+            await indicesApi.updatePattern(primaryPattern.cache_key, { status: 'false_positive' });
+            const updated = selectedPatterns.map((p: PDNPattern) => p.cache_key === primaryPattern.cache_key ? { ...p, status: 'false_positive' as PDNPattern['status'] } : p);
+            setSelectedPatterns(updated);
+        } catch (error) {
+            console.error('Failed to mark as false positive:', error);
+            alert('Ошибка при отметке как False Positive');
+        }
+    };
+
+    const handleCustomMessageBlur = async (message: string) => {
+        if (!primaryPattern) return;
+        try {
+            await indicesApi.updatePattern(primaryPattern.cache_key, { custom_message: message });
+        } catch (error) {
+            console.error('Failed to save custom message:', error);
+            alert('Ошибка при сохранении комментария');
+        }
+    };
+
+    const rawDocument = primaryPattern?.full_document ?? null;
 
     return (
         <div className="flex h-full w-full bg-white overflow-hidden">
@@ -78,18 +134,20 @@ export default function Dashboard() {
                 style={{ width: sidebarWidth }}
                 className="shrink-0 h-full border-r border-slate-200 bg-slate-50/30 relative flex group/sidebar"
             >
-                <div className="flex-1 w-full h-full overflow-hidden">
-                    <IndicesTree
-                        selectedCacheKeys={selectedPatterns.map(p => p.cache_key)}
-                        selectedIndexPattern={selectedIndexPattern}
-                        onSelectPatterns={(patterns, idxPattern) => {
-                            setSelectedPatterns(patterns);
-                            if (idxPattern !== undefined) {
-                                setSelectedIndexPattern(idxPattern);
-                            }
-                        }}
-                    />
-                </div>
+<div className="flex-1 w-full h-full overflow-hidden">
+                        <IndicesTree
+                            key={treeReloadKey}
+                            selectedCacheKeys={selectedPatterns.map(p => p.cache_key)}
+                            selectedIndexPattern={selectedIndexPattern}
+                            scanningIndexPattern={scannerStatus.current_index_pattern}
+                            onSelectPatterns={(patterns, idxPattern) => {
+                                setSelectedPatterns(patterns);
+                                if (idxPattern !== undefined) {
+                                    setSelectedIndexPattern(idxPattern);
+                                }
+                            }}
+                        />
+                    </div>
                 {/* Resizer Handle */}
                 <div
                     className="w-[3px] cursor-col-resize hover:bg-blue-400 active:bg-blue-500 transition-colors h-full absolute right-0 top-0 z-10"
@@ -110,8 +168,14 @@ export default function Dashboard() {
                                         <span className="text-slate-400 font-normal mx-2">/</span>
                                         {primaryPattern.field_path}
                                     </h2>
-                                    <div className="text-sm text-slate-500 font-mono mt-1">
+                                    <div className="text-sm text-slate-500 font-mono mt-1 flex items-center">
                                         Cache Key: {primaryPattern.cache_key}
+                                        {primaryPattern.has_jira_task && (
+                                            <span className="ml-3 flex items-center text-blue-600">
+                                                <CheckSquare className="w-3.5 h-3.5 mr-1" />
+                                                Есть Jira задача
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                                 {selectedPatterns.length > 1 && (
@@ -167,27 +231,27 @@ export default function Dashboard() {
                                             <Database className="w-4 h-4 mr-2 text-slate-400" /> Детали кэша
                                         </h3>
                                         <div className="grid grid-cols-2 gap-y-4 gap-x-8">
-                                            <div>
-                                                <div className="text-xs text-slate-500 mb-1">Status</div>
-                                                <span className={clsx(
-                                                    "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
-                                                    primaryPattern.status === 'new' && "bg-red-100 text-red-800",
-                                                    primaryPattern.status === 'confirmed' && "bg-blue-100 text-blue-800",
-                                                    primaryPattern.status === 'false_positive' && "bg-green-100 text-green-800",
-                                                    primaryPattern.status === 'unverified' && "bg-slate-200 text-slate-800"
-                                                )}>
-                                                    <select
-                                                        className="bg-transparent border-none focus:ring-0 outline-none cursor-pointer"
-                                                        value={primaryPattern.status}
-                                                        onChange={() => { }} // TODO: Привязать API для смены статуса
-                                                    >
-                                                        <option value="new">New</option>
-                                                        <option value="confirmed">Confirmed</option>
-                                                        <option value="false_positive">False Positive</option>
-                                                        <option value="unverified">Unverified</option>
-                                                    </select>
-                                                </span>
-                                            </div>
+<div>
+                                                    <div className="text-xs text-slate-500 mb-1">Status</div>
+                                                    <span className={clsx(
+                                                        "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
+                                                        primaryPattern.status === 'new' && "bg-red-100 text-red-800",
+                                                        primaryPattern.status === 'confirmed' && "bg-blue-100 text-blue-800",
+                                                        primaryPattern.status === 'false_positive' && "bg-green-100 text-green-800",
+                                                        primaryPattern.status === 'unverified' && "bg-slate-200 text-slate-800"
+                                                    )}>
+                                                        <select
+                                                            className="bg-transparent border-none focus:ring-0 outline-none cursor-pointer"
+                                                            value={primaryPattern.status}
+                                                            onChange={(e) => handleStatusChange(e.target.value)}
+                                                        >
+                                                            <option value="new">New</option>
+                                                            <option value="confirmed">Confirmed</option>
+                                                            <option value="false_positive">False Positive</option>
+                                                            <option value="unverified">Unverified</option>
+                                                        </select>
+                                                    </span>
+                                                </div>
                                             <div>
                                                 <div className="text-xs text-slate-500 mb-1">Hit Count (сколько раз найдено)</div>
                                                 <div className="text-sm font-semibold text-slate-900">{primaryPattern.hit_count}</div>
@@ -250,14 +314,14 @@ export default function Dashboard() {
                                         </h3>
                                         <div className="flex flex-wrap gap-2">
                                             {primaryPattern.tags.length > 0 ? primaryPattern.tags.map(tag => (
-                                                <span key={tag} className={clsx(
+                                                <span key={tag.id} className={clsx(
                                                     "px-2.5 py-1 rounded-md text-sm border",
-                                                    tag === 'G' ? "bg-amber-100 text-amber-800 border-amber-200" :
-                                                        tag === 'S' ? "bg-purple-100 text-purple-800 border-purple-200" :
-                                                            tag === 'U' ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
+                                                    tag.name === 'G' ? "bg-amber-100 text-amber-800 border-amber-200" :
+                                                        tag.name === 'S' ? "bg-purple-100 text-purple-800 border-purple-200" :
+                                                            tag.name === 'U' ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
                                                                 "bg-slate-100 text-slate-700 border-slate-200"
                                                 )}>
-                                                    #{tag}
+                                                    #{tag.name}
                                                 </span>
                                             )) : (
                                                 <span className="text-sm text-slate-400 italic">Нет тегов</span>
@@ -271,15 +335,24 @@ export default function Dashboard() {
                                     {/* Быстрые действия */}
                                     <div className="flex space-x-3">
                                         <button
-                                            className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-md shadow-sm transition-colors"
-                                            onClick={() => alert('Запрос на принудительное обновление примеров отправлен!')}
+                                            className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-md shadow-sm transition-colors flex items-center"
+                                            onClick={handleUpdateExamples}
                                         >
+                                            <RefreshCw className="w-4 h-4 mr-2" />
                                             Обновить примеры
                                         </button>
-                                        <button className="px-4 py-2 bg-white border border-slate-300 hover:bg-red-50 hover:text-red-700 text-slate-700 text-sm font-medium rounded-md shadow-sm transition-colors">
+                                        <button
+                                            className="px-4 py-2 bg-white border border-slate-300 hover:bg-red-50 hover:text-red-700 text-slate-700 text-sm font-medium rounded-md shadow-sm transition-colors flex items-center"
+                                            onClick={handleDeletePattern}
+                                        >
+                                            <Trash2 className="w-4 h-4 mr-2" />
                                             Удалить из БД
                                         </button>
-                                        <button className="px-4 py-2 bg-green-50 border border-green-200 hover:bg-green-100 text-green-700 text-sm font-medium rounded-md shadow-sm transition-colors">
+                                        <button
+                                            className="px-4 py-2 bg-green-50 border border-green-200 hover:bg-green-100 text-green-700 text-sm font-medium rounded-md shadow-sm transition-colors flex items-center"
+                                            onClick={handleFalsePositive}
+                                        >
+                                            <AlertCircle className="w-4 h-4 mr-2" />
                                             Отметить как False Positive
                                         </button>
                                     </div>
@@ -292,7 +365,8 @@ export default function Dashboard() {
                                             className="w-full text-sm border border-slate-300 rounded-md p-3 focus:ring-blue-500 focus:border-blue-500"
                                             rows={4}
                                             placeholder="Напишите здесь дополнительные комментарии, замечания или инструкции по исправлению ПДн..."
-                                            defaultValue={""}
+                                            defaultValue={primaryPattern.custom_message || ''}
+                                            onBlur={(e) => handleCustomMessageBlur(e.target.value)}
                                         />
                                     </div>
                                 </div>
@@ -301,33 +375,42 @@ export default function Dashboard() {
                             {/* Вкладка: ПРИМЕРЫ */}
                             {activeTab === 'examples' && (
                                 <div className="space-y-4">
-                                    {[1, 2, 3].map((item) => (
-                                        <div key={item} className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-                                            <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                                                <span className="text-xs font-mono text-slate-500">Doc ID: a1b2c3d4e{item}</span>
-                                                <span className="text-xs text-slate-400">2023-10-25 14:30:00</span>
+                                    {primaryPattern.examples && primaryPattern.examples.length > 0 ? (
+                                        primaryPattern.examples.map((example: string, idx: number) => (
+                                            <div key={idx} className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+                                                <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                                                    <span className="text-xs font-mono text-slate-500">Пример #{idx + 1}</span>
+                                                </div>
+                                                <div className="p-4 flex items-center text-sm">
+                                                    <span className="font-mono bg-yellow-100 text-yellow-900 px-1 py-0.5 rounded">{example}</span>
+                                                </div>
                                             </div>
-                                            <div className="p-4 flex items-center text-sm">
-                                                <span className="text-slate-400 w-24 shrink-0 text-right pr-4 font-mono">"client_phone":</span>
-                                                <span className="font-mono bg-yellow-100 text-yellow-900 px-1 py-0.5 rounded">79265554433</span>
-                                                <span className="text-slate-400 pl-2">...</span>
-                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-8 text-center text-slate-500">
+                                            Нет примеров для этого паттерна
                                         </div>
-                                    ))}
+                                    )}
                                 </div>
                             )}
 
                             {/* Вкладка: СЫРОЙ ДОКУМЕНТ */}
                             {activeTab === 'raw' && (
-                                <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-                                    <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center text-sm text-slate-600">
-                                        <ShieldAlert className="w-4 h-4 mr-2 text-amber-500" />
-                                        Отображается первый закэшированный сырой документ для этого паттерна. Желтым подсвечено найденное значение.
+                                rawDocument ? (
+                                    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+                                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center text-sm text-slate-600">
+                                            <ShieldAlert className="w-4 h-4 mr-2 text-amber-500" />
+                                            Первый закэшированный сырой документ (PDNFinding.full_document, самый свежий по found_at).
+                                        </div>
+                                        <div className="p-4 overflow-x-auto text-[13px]">
+                                            <JsonView data={rawDocument} shouldExpandNode={() => true} style={defaultStyles} />
+                                        </div>
                                     </div>
-                                    <div className="p-4 overflow-x-auto text-[13px]">
-                                        <JsonView data={mockRawDocument} shouldExpandNode={() => true} style={defaultStyles} />
+                                ) : (
+                                    <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-8 text-center text-slate-500">
+                                        Нет сырого документа для этого паттерна
                                     </div>
-                                </div>
+                                )
                             )}
 
                         </div>
@@ -429,11 +512,6 @@ export default function Dashboard() {
                 <SingleScanModal
                     indexName={selectedIndexPattern}
                     onClose={() => setIsSingleScanModalOpen(false)}
-                    onStartScan={(params) => {
-                        console.log('Starting Single Scan:', params);
-                        setIsSingleScanModalOpen(false);
-                        alert(`Одиночное сканирование для ${params.indexPattern} запущено!`);
-                    }}
                 />
             )}
         </div>

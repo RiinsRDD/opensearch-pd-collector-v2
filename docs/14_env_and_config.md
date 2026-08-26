@@ -4,10 +4,22 @@
 
 Расположен в корне проекта. Читается через `pydantic-settings` (`app/core/config.py`).
 
-Текущее содержимое:
+Пример содержимого для Docker:
+```
+POSTGRES_SERVER=db
+POSTGRES_USER=pdn_user
+POSTGRES_PASSWORD=pdn_password
+POSTGRES_DB=pdn_collector
+GRAFANA_USER=admin
+GRAFANA_PASSWORD=admin
+```
 
+Для локальной разработки:
 ```
 POSTGRES_SERVER=localhost
+POSTGRES_USER=pdn_user
+POSTGRES_PASSWORD=pdn_password
+POSTGRES_DB=pdn_collector
 ```
 
 ## Класс `Settings` (`app/core/config.py`)
@@ -31,10 +43,20 @@ class Settings(BaseSettings):
     POSTGRES_SERVER: str = "db"
     POSTGRES_PORT: int = 5432
 
+    # JWT
+    JWT_SECRET_KEY: str = "change-me-in-production"  # Изменить в production!
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 дней
+
     # Logs
     LOG_DIR: Path = Path("logs")
     RUN_LOG_NAME: str = "run.log"
     ERR_LOG_NAME: str = "errors.log"
+
+    # Prometheus (опционально)
+    PROMETHEUS_MULTIPROC_DIR: str = ""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 ```
 
 ### Computed Properties
@@ -70,16 +92,20 @@ class Settings(BaseSettings):
 | `LOG_DIR` | `logs` | Директория для логов |
 | `RUN_LOG_NAME` | `run.log` | Имя файла общих логов |
 | `ERR_LOG_NAME` | `errors.log` | Имя файла ошибок |
+| `JWT_SECRET_KEY` | `change-me-in-production` | **Обязательно сменить в production!** |
+| `JWT_ALGORITHM` | `HS256` | Алгоритм подписи JWT |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `10080` | Время жизни access token (7 дней) |
+| `PROMETHEUS_MULTIPROC_DIR` | `""` | Для multiprocess Prometheus (gunicorn) |
 
-### Docker Compose
+### Docker Compose (в `docker-compose.yml`)
 
-| Переменная | По умолчанию | Файл | Описание |
-|------------|-------------|------|----------|
-| `POSTGRES_USER` | `pdn_user` | `docker-compose.postgres.yml` | Пользователь PostgreSQL |
-| `POSTGRES_PASSWORD` | `pdn_password` | `docker-compose.postgres.yml` | Пароль PostgreSQL |
-| `POSTGRES_DB` | `pdn_collector` | `docker-compose.postgres.yml` | Имя БД |
-| `GRAFANA_USER` | `admin` | `docker-compose.grafana.yml` | Логин Grafana |
-| `GRAFANA_PASSWORD` | `admin` | `docker-compose.grafana.yml` | Пароль Grafana |
+| Переменная | По умолчанию | Сервис | Описание |
+|------------|-------------|--------|----------|
+| `POSTGRES_USER` | `pdn_user` | `db` | Пользователь PostgreSQL |
+| `POSTGRES_PASSWORD` | `pdn_password` | `db` | Пароль PostgreSQL |
+| `POSTGRES_DB` | `pdn_collector` | `db` | Имя БД |
+| `GRAFANA_USER` | `admin` | `grafana` | Логин Grafana |
+| `GRAFANA_PASSWORD` | `admin` | `grafana` | Пароль Grafana |
 
 ### Frontend
 
@@ -89,4 +115,29 @@ class Settings(BaseSettings):
 
 ## Alembic (`alembic.ini`)
 
-Ключевая настройка — `sqlalchemy.url`. Для production устанавливается через переменную окружения или переопределяется в `migrations/env.py` (использует `settings.DATABASE_URL`).
+Ключевая настройка — `sqlalchemy.url`. Для production устанавливается через переменную окружения или переопределяется в `migrations/env.py` (использует `settings.DATABASE_URL_ASYNC`).
+
+## Профили Docker Compose
+
+В едином `docker-compose.yml` используются профили:
+
+| Профиль | Сервисы | Команда запуска |
+|---------|---------|-----------------|
+| `core` | `api`, `db` | `docker compose --profile core up -d` |
+| `monitoring` | `postgres_exporter`, `node_exporter`, `prometheus`, `grafana` | `docker compose --profile monitoring up -d` |
+| `full` | все сервисы | `docker compose --profile full up -d` |
+
+Dev режим (с hot-reload, использует `docker-compose.override.yml`):
+```bash
+docker compose --profile core up
+```
+
+## Seed демо-данных
+
+После `alembic upgrade head` и при доступной PostgreSQL (`POSTGRES_SERVER=localhost` на хосте или `db` в Docker):
+
+```bash
+python -m tests.seed_mock_data
+```
+
+Скрипт читает `DATABASE_URL_ASYNC` из `app.core.config.Settings` (те же переменные, что и API). Подробности содержимого — в `docs/02_database.md`.

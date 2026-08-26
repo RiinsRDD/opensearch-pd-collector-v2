@@ -1,9 +1,12 @@
+from app.models.base import Base
 from app.models.pdn import PDNPattern, PDNFinding
 from app.models.settings import SystemSetting, RegexRule, StatusSetting, IndexKeyExclusion
 from app.models.tags import Tag, PatternTagLink
 from app.models.tasks import JiraTask
 from app.models.indices import IndexOwner
 from app.models.logs import ScannerLog
+from app.models.user import User
+from app.models.scan_field_config import ScanFieldConfig
 
 # Удобно импортировать все модели из app.models для Alembic и инициализации БД
 __all__ = [
@@ -18,5 +21,7 @@ __all__ = [
     "JiraTask",
     "IndexOwner",
     "IndexKeyExclusion",
-    "ScannerLog"
+    "ScannerLog",
+    "User",
+    "ScanFieldConfig",
 ]

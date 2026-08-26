@@ -10,11 +10,16 @@ CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
 class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
-    def __init__(self, model: Type[ModelType]):
+    def __init__(self, model: Type[ModelType], pk_field: str = "id"):
         self.model = model
+        self.pk_field = pk_field
+
+    def _get_pk_column(self):
+        return getattr(self.model, self.pk_field)
 
     async def get(self, db: AsyncSession, id: Any) -> Optional[ModelType]:
-        result = await db.execute(select(self.model).filter(self.model.id == id))
+        pk_col = self._get_pk_column()
+        result = await db.execute(select(self.model).filter(pk_col == id))
         return result.scalars().first()
         
     async def get_by_field(self, db: AsyncSession, field_name: str, value: Any) -> Optional[ModelType]:
@@ -50,7 +55,9 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return db_obj
 
     async def remove(self, db: AsyncSession, *, id: Any) -> ModelType:
-        obj = await self.get(db=db, id=id)
+        pk_col = self._get_pk_column()
+        result = await db.execute(select(self.model).filter(pk_col == id))
+        obj = result.scalars().first()
         if obj:
             await db.delete(obj)
             await db.commit()

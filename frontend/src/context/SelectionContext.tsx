@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
-import type { PDNPattern } from '../components/tree/IndicesTree';
+import type { PDNPattern } from '../types/api';
 
 interface SelectionContextType {
     selectedPatterns: PDNPattern[];

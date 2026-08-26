@@ -35,14 +35,14 @@ class ScanScheduler:
                 # пока просто запускам по *
                 indices_to_scan = ["*"]
                 
-                # Инициализация
-                os_client = OpenSearchClient()
-                scanner = ScannerService(os_client)
-                
-                # Запуск
-                total_new = await scanner.run_global_scan(db, hours=1, indices=indices_to_scan)
-                logging.info(f"Scheduled scan completed successfully. Found {total_new} new/updated keys.")
-                
+                # Инициализация с connection pooling
+                async with OpenSearchClient() as os_client:
+                    scanner = ScannerService(os_client)
+                    
+                    # Запуск
+                    total_new = await scanner.run_global_scan(db, hours=1, indices=indices_to_scan)
+                    logging.info(f"Scheduled scan completed successfully. Found {total_new} new/updated keys.")
+                    
             except Exception as e:
                 logging.error(f"Scheduled scan failed: {e}")
 

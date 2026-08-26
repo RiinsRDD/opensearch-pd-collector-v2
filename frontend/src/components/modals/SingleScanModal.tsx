@@ -1,23 +1,32 @@
 import { useState } from 'react';
 import { X, Search, Clock, FileDigit } from 'lucide-react';
+import { scannerApi } from '../../api/client';
 
 interface SingleScanModalProps {
     indexName: string;
     onClose: () => void;
-    onStartScan: (params: any) => void;
 }
 
-export default function SingleScanModal({ indexName, onClose, onStartScan }: SingleScanModalProps) {
+export default function SingleScanModal({ indexName, onClose }: SingleScanModalProps) {
     const [timeframe, setTimeframe] = useState('24');
     const [maxDocs, setMaxDocs] = useState('10000');
+    const [isLoading, setIsLoading] = useState(false);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        onStartScan({
-            indexPattern: indexName,
-            hours: parseInt(timeframe, 10),
-            maxDocs: parseInt(maxDocs, 10)
-        });
+        setIsLoading(true);
+        try {
+            await scannerApi.triggerScan(indexName, {
+                hours: parseInt(timeframe, 10),
+                maxDocs: parseInt(maxDocs, 10)
+            });
+            onClose();
+        } catch (error) {
+            console.error('Failed to start scan:', error);
+            alert('Ошибка при запуске сканирования');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -28,7 +37,7 @@ export default function SingleScanModal({ indexName, onClose, onStartScan }: Sin
                         <Search className="w-5 h-5 mr-2 text-indigo-500" />
                         Одиночное сканирование (Single Scan)
                     </div>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+                    <button onClick={onClose} disabled={isLoading} className="text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -53,6 +62,7 @@ export default function SingleScanModal({ indexName, onClose, onStartScan }: Sin
                             onChange={(e) => setTimeframe(e.target.value)}
                             className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                             required
+                            disabled={isLoading}
                         />
                         <p className="mt-1 text-xs text-slate-500">За какой период в прошлое искать (от 1 до 720 часов).</p>
                     </div>
@@ -71,6 +81,7 @@ export default function SingleScanModal({ indexName, onClose, onStartScan }: Sin
                             onChange={(e) => setMaxDocs(e.target.value)}
                             className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                             required
+                            disabled={isLoading}
                         />
                         <p className="mt-1 text-xs text-slate-500">Максимальное количество анализируемых логов.</p>
                     </div>
@@ -79,15 +90,17 @@ export default function SingleScanModal({ indexName, onClose, onStartScan }: Sin
                         <button
                             type="button"
                             onClick={onClose}
-                            className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors"
+                            disabled={isLoading}
+                            className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors disabled:opacity-50"
                         >
                             Отмена
                         </button>
                         <button
                             type="submit"
-                            className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm"
+                            disabled={isLoading}
+                            className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50"
                         >
-                            Запустить сканирование
+                            {isLoading ? 'Запуск...' : 'Запустить сканирование'}
                         </button>
                     </div>
                 </form>

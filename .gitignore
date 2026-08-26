@@ -37,8 +37,11 @@ lerna-debug.log*
 # === Project specific ===
 logs/
 .pytest_cache/
+coverage.xml
+.coverage
 docs_archived/
 notes/
 notes_*.txt
+.kilo/
 
 .grepai/

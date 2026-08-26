@@ -10,6 +10,7 @@ from app.models.indices import IndexOwner
 from app.models.pdn import PDNPattern
 from app.models.scan_field_config import ScanFieldConfig
 from app.models.tags import Tag, PatternTagLink
+from app.api.deps import require_viewer, require_analyst, require_admin
 
 router = APIRouter()
 
@@ -105,7 +106,10 @@ class GlobalSettingsResponse(BaseModel):
 # ==================== Глобальные параметры ====================
 
 @router.get("/global", response_model=GlobalSettingsResponse)
-async def get_global_settings(db: AsyncSession = Depends(get_db)):
+async def get_global_settings(
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_viewer)
+):
     """Получение глобальных настроек (флаги, интервал, лимиты, системные правила)"""
     # 1. Запрашиваем SystemSettings
     result = await db.execute(select(SystemSetting))
@@ -118,7 +122,7 @@ async def get_global_settings(db: AsyncSession = Depends(get_db)):
             val = True
         elif s.value.lower() == 'false':
             val = False
-        elif s.value.isdigit():
+        elif s.key in ('examples_count', 'scan_interval_hours', 'jira_cvss_score') and s.value.lstrip('-').isdigit():
             val = int(s.value)
         else:
             val = s.value
@@ -207,7 +211,11 @@ async def get_global_settings(db: AsyncSession = Depends(get_db)):
     )
 
 @router.post("/global")
-async def update_global_settings(payload: GlobalSettingsResponse, db: AsyncSession = Depends(get_db)):
+async def update_global_settings(
+    payload: GlobalSettingsResponse, 
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin)
+):
     """Обновление глобальных настроек и системных правил для индексов"""
     # 1. Обновление SystemSettings
     settings_map = {
@@ -298,7 +306,10 @@ async def update_global_settings(payload: GlobalSettingsResponse, db: AsyncSessi
 # ==================== Управление Регулярками ПДн (PDN Types) ====================
 
 @router.get("/pdn-types")
-async def get_pdn_types(db: AsyncSession = Depends(get_db)):
+async def get_pdn_types(
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_viewer)
+):
     """Получение всех типов регулярок ПДн"""
     result = await db.execute(select(RegexRule).filter(RegexRule.rule_type == 'regex'))
     rules = result.scalars().all()
@@ -316,14 +327,21 @@ async def get_pdn_types(db: AsyncSession = Depends(get_db)):
     return response
 
 @router.get("/pdn-types/list")
-async def get_pdn_types_list(db: AsyncSession = Depends(get_db)):
+async def get_pdn_types_list(
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_viewer)
+):
     """Получение только списка уникальных pdn_type"""
     result = await db.execute(select(RegexRule.pdn_type).filter(RegexRule.rule_type == 'regex').distinct())
     types = result.scalars().all()
     return sorted(list(set(types).union(SYSTEM_PDN_TYPES)))
 
 @router.post("/pdn-types")
-async def add_pdn_type(payload: PdnTypeCreate, db: AsyncSession = Depends(get_db)):
+async def add_pdn_type(
+    payload: PdnTypeCreate, 
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin)
+):
     """Добавить новый тип ПДн с регулярным выражением"""
     pdn_type = payload.pdn_type.strip().lower()
     if not pdn_type:
@@ -366,7 +384,12 @@ async def add_pdn_type(payload: PdnTypeCreate, db: AsyncSession = Depends(get_db
     }
 
 @router.put("/pdn-types/{rule_id}")
-async def update_pdn_type(rule_id: int, payload: PdnTypeUpdate, db: AsyncSession = Depends(get_db)):
+async def update_pdn_type(
+    rule_id: int, 
+    payload: PdnTypeUpdate, 
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin)
+):
     """Обновление регулярного выражения для существующего типа"""
     result = await db.execute(select(RegexRule).filter(RegexRule.id == rule_id, RegexRule.rule_type == 'regex'))
     rule = result.scalars().first()
@@ -379,7 +402,11 @@ async def update_pdn_type(rule_id: int, payload: PdnTypeUpdate, db: AsyncSession
     return {"message": "PDN regex pattern updated"}
 
 @router.delete("/pdn-types/{rule_id}")
-async def delete_pdn_type(rule_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_pdn_type(
+    rule_id: int, 
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin)
+):
     """
     Удаление пользовательского типа ПДн. 
     Системные типы защищены от удаления. 
@@ -408,19 +435,26 @@ async def delete_pdn_type(rule_id: int, db: AsyncSession = Depends(get_db)):
 # ==================== Индивидуальные настройки индексов ====================
 
 @router.get("/indices")
-async def get_index_settings():
+async def get_index_settings(
+    _: None = Depends(require_viewer)
+):
     """Получение индивидуальных настроек индексов (исключения, владельцы)"""
     return [{"index_pattern": "bcs-frontend-logs-*", "override_global_settings": True, "is_active": False}]
 
 @router.post("/indices")
-async def update_index_settings(payload: dict):
+async def update_index_settings(
+    payload: dict,
+    _: None = Depends(require_admin)
+):
     """Обновление или создание индивидуальной настройки индекса"""
     return {"message": "Index settings updated", "data": payload}
 
 # ==================== Статусы ====================
 
 @router.get("/statuses")
-async def get_statuses():
+async def get_statuses(
+    _: None = Depends(require_viewer)
+):
     """Получение списка статусов и их цветов для UI"""
     return [
         {"id": "new", "label": "New", "color": "#ef4444"},
@@ -431,14 +465,21 @@ async def get_statuses():
     ]
 
 @router.post("/statuses")
-async def update_statuses(payload: List[Dict[str, str]]):
+async def update_statuses(
+    payload: List[Dict[str, str]],
+    _: None = Depends(require_admin)
+):
     """Обновление цветов статусов"""
     return {"message": "Statuses updated", "data": payload}
 
 # ==================== Теги ====================
 
 @router.delete("/tags/{tag_name}")
-async def delete_tag_globally(tag_name: str, db: AsyncSession = Depends(get_db)):
+async def delete_tag_globally(
+    tag_name: str, 
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin)
+):
     """Глобальное удаление тега из всех cache_key"""
     result = await db.execute(select(Tag).filter(Tag.name == tag_name))
     tag = result.scalars().first()
@@ -457,7 +498,10 @@ async def delete_tag_globally(tag_name: str, db: AsyncSession = Depends(get_db))
 # ==================== Глобальные исключения ====================
 
 @router.get("/exclusions/global")
-async def get_global_exclusions(db: AsyncSession = Depends(get_db)):
+async def get_global_exclusions(
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_viewer)
+):
     """
     Получение всех глобальных исключений из regex_rules.
     Возвращает записи с rule_type in (exclude_pattern, prefix_exclude, suffix_exclude, exclude_key, full_path_key.exclude).
@@ -468,7 +512,11 @@ async def get_global_exclusions(db: AsyncSession = Depends(get_db)):
     return rules
 
 @router.post("/exclusions/global")
-async def add_global_exclusion(payload: GlobalExclusionCreate, db: AsyncSession = Depends(get_db)):
+async def add_global_exclusion(
+    payload: GlobalExclusionCreate, 
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin)
+):
     """
     Добавить глобальное исключение.
     """
@@ -487,7 +535,11 @@ async def add_global_exclusion(payload: GlobalExclusionCreate, db: AsyncSession 
     }
 
 @router.delete("/exclusions/global/{exclusion_id}")
-async def delete_global_exclusion(exclusion_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_global_exclusion(
+    exclusion_id: int, 
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin)
+):
     """Удалить глобальное исключение по ID из regex_rules"""
     result = await db.execute(select(RegexRule).filter(RegexRule.id == exclusion_id))
     rule = result.scalars().first()
@@ -499,7 +551,11 @@ async def delete_global_exclusion(exclusion_id: int, db: AsyncSession = Depends(
 # ==================== Исключения ключей индексов ====================
 
 @router.get("/exclusions/index")
-async def get_index_exclusions(index_pattern: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)):
+async def get_index_exclusions(
+    index_pattern: Optional[str] = Query(None), 
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_viewer)
+):
     """
     Получение per-index key exclusions.
     Опциональный фильтр по index_pattern.
@@ -512,7 +568,11 @@ async def get_index_exclusions(index_pattern: Optional[str] = Query(None), db: A
     return exclusions
 
 @router.post("/exclusions/index")
-async def add_index_exclusion(payload: IndexExclusionCreate, db: AsyncSession = Depends(get_db)):
+async def add_index_exclusion(
+    payload: IndexExclusionCreate, 
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin)
+):
     """
     Добавить per-index key exclusion.
     """
@@ -531,7 +591,11 @@ async def add_index_exclusion(payload: IndexExclusionCreate, db: AsyncSession = 
     }
 
 @router.delete("/exclusions/index/{exclusion_id}")
-async def delete_index_exclusion(exclusion_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_index_exclusion(
+    exclusion_id: int, 
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin)
+):
     """Удалить per-index key exclusion по ID"""
     result = await db.execute(select(IndexKeyExclusion).filter(IndexKeyExclusion.id == exclusion_id))
     exclusion = result.scalars().first()
@@ -543,7 +607,10 @@ async def delete_index_exclusion(exclusion_id: int, db: AsyncSession = Depends(g
 # ==================== Список индексов для autocomplete ====================
 
 @router.get("/exclusions/indices-list")
-async def get_indices_list(db: AsyncSession = Depends(get_db)):
+async def get_indices_list(
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_viewer)
+):
     """
     Получение списка всех index_pattern из БД (обновляется после каждого сканирования).
     Используется для autocomplete при создании per-index exclusion.
@@ -567,7 +634,10 @@ class ScanFieldCreate(BaseModel):
     field_path: str
 
 @router.get("/scan-fields")
-async def get_scan_fields(db: AsyncSession = Depends(get_db)):
+async def get_scan_fields(
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_viewer)
+):
     """Получить список всех конфигураций дополнительных полей"""
     result = await db.execute(select(ScanFieldConfig))
     configs = result.scalars().all()
@@ -584,7 +654,11 @@ async def get_scan_fields(db: AsyncSession = Depends(get_db)):
     ]
 
 @router.post("/scan-fields")
-async def add_scan_field(payload: ScanFieldCreate, db: AsyncSession = Depends(get_db)):
+async def add_scan_field(
+    payload: ScanFieldCreate, 
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin)
+):
     """Добавить новое дополнительное поле разграничения"""
     if not payload.field_path.strip():
         raise HTTPException(status_code=400, detail="field_path cannot be empty")
@@ -616,7 +690,11 @@ async def add_scan_field(payload: ScanFieldCreate, db: AsyncSession = Depends(ge
     }}
 
 @router.delete("/scan-fields/{config_id}")
-async def delete_scan_field(config_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_scan_field(
+    config_id: int, 
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin)
+):
     """Удалить дополнительное поле разграничения (обязательные поля нельзя удалить)"""
     result = await db.execute(select(ScanFieldConfig).filter(ScanFieldConfig.id == config_id))
     config = result.scalars().first()

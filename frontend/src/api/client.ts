@@ -10,9 +10,89 @@ export const apiClient = axios.create({
     },
 });
 
+export interface IndexTreeData {
+    tree: any[];
+    new_counts: Record<string, number>;
+}
+
+export interface PDNPatternData {
+    cache_key: string;
+    index_pattern: string;
+    field_path: string;
+    pdn_type: string;
+    context_type: string;
+    key_hint: string | null;
+    extra_fields: Record<string, string> | null;
+    hit_count: number;
+    status: string;
+    custom_message: string | null;
+    tags: Array<{ id: number; name: string; color: string | null }>;
+    examples: string[];
+    full_document?: Record<string, unknown> | null;
+    has_jira_task: boolean;
+}
+
+export interface TreeNode {
+    id: string;
+    name: string;
+    type: string;
+    children: any;
+    pattern?: PDNPatternData;
+}
+
 export const indicesApi = {
-    getTree: async () => {
-        const response = await apiClient.get('/indices');
+    getTree: async (status?: string, tags?: string): Promise<{ tree: TreeNode[]; new_counts: Record<string, number> }> => {
+        const params = new URLSearchParams();
+        if (status) params.append('status', status);
+        if (tags) params.append('tags', tags);
+        const response = await apiClient.get('/indices', { params });
+        return response.data;
+    },
+
+    updateExamples: async (cacheKey: string) => {
+        const response = await apiClient.post(`/indices/examples/update/${cacheKey}`);
+        return response.data;
+    },
+
+    createJiraTasks: async (data: { cache_keys: string[]; custom_message?: string }) => {
+        const response = await apiClient.post('/indices/jira/tasks', data);
+        return response.data;
+    },
+
+    getJiraTasksByIndex: async (indexPattern: string) => {
+        const response = await apiClient.get(`/indices/jira/tasks/${encodeURIComponent(indexPattern)}`);
+        return response.data;
+    },
+
+    getJiraHistory: async (limit = 100, page = 1) => {
+        const response = await apiClient.get('/indices/jira/history', { params: { limit, page } });
+        return response.data;
+    },
+
+    updatePattern: async (cacheKey: string, data: { status?: string; custom_message?: string }) => {
+        const response = await apiClient.patch(`/indices/${cacheKey}`, data);
+        return response.data;
+    },
+
+    deletePattern: async (cacheKey: string) => {
+        const response = await apiClient.delete(`/indices/${cacheKey}`);
+        return response.data;
+    },
+};
+
+export const scannerApi = {
+    triggerScan: async (indexPattern: string, params: { hours: number; maxDocs: number }) => {
+        const response = await apiClient.post(`/scanner/scan/${encodeURIComponent(indexPattern)}`, params);
+        return response.data;
+    },
+
+    getStatus: async () => {
+        const response = await apiClient.get('/scanner/status');
+        return response.data;
+    },
+
+    getLogs: async (limit = 50) => {
+        const response = await apiClient.get('/scanner/logs', { params: { limit } });
         return response.data;
     },
 };
