@@ -69,9 +69,20 @@ ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # есть в Settings
 
 `create_access_token` кодирует `sub` и `role` **без** claim `exp`. Срок из `ACCESS_TOKEN_EXPIRE_MINUTES` в JWT не пишется.
 
-### Frontend (факт)
+### Frontend (реализовано)
 
-Нет `Login.tsx`, нет роута `/login`, Axios не ставит `Authorization`. Header: захардкоженные «A» / «Admin User»; кнопка «Выйти» токен не трогает. Живой API без Bearer → 401. В pytest `get_current_user` подменён на admin.
+- `POST /api/v1/auth/login` — `frontend/src/api/client.ts` → `authApi.login()`
+- `GET /api/v1/auth/me` — `authApi.me()` при старте приложения (если есть токен в `localStorage`)
+- Axios interceptor: добавляет `Authorization: Bearer <token>` из `localStorage.pdn_access_token` ко всем `/api/v1/*`
+- 401 interceptor: очищает токен, редирект на `/login` (кроме `/auth/login`)
+- `frontend/src/context/AuthContext.tsx` — `user`, `loading`, `login()`, `logout()`, автозагрузка `/me` при наличии токена
+- `frontend/src/pages/Login.tsx` — форма username/password, обработка 401, редирект на `/` при успехе
+- `frontend/src/App.tsx` — `AuthProvider`, роут `/login` без Header/StatusBar, guard для `/`, `/settings`, `/tasks`
+- `frontend/src/components/layout/Header.tsx` — показывает `user.username` и `user.role`, кнопка «Выйти» вызывает `logout()` + переход на `/login`
+- **RBAC в UI** (`frontend/src/utils/rbac.ts`, используется в `Header.tsx`, `Dashboard.tsx`, `Settings.tsx`):
+  - `viewer`: только чтение — скрыта кнопка «Завести задачу в Jira», скрыты/дизаблены: смена статуса, custom message, обновление примеров, False Positive, удаление паттерна, запуск скана, сохранение настроек, управление владельцами/исключениями/регулярками/полями сканирования
+  - `analyst`: + может создавать Jira задачи, менять статус/custom_message, обновлять примеры, отмечать False Positive
+  - `admin`: полный доступ — запуск скана, удаление паттернов, запись настроек (General/Jira/PDN parsers/Statuses/Tags), владельцы, исключения, регулярки, поля сканирования
 
 ### Персональные ключи Jira
 

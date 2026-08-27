@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Database, Plus, Trash2, ShieldAlert, Lock } from 'lucide-react';
+import { Database, Plus, Trash2, ShieldAlert, Lock, RefreshCw, AlertTriangle } from 'lucide-react';
 import { scanFieldsApi, type ScanFieldConfig } from '../../api/client';
 import clsx from 'clsx';
 
 export default function ScanFieldsList() {
     const [fields, setFields] = useState<ScanFieldConfig[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [isAddMode, setIsAddMode] = useState(false);
     const [newIndexPattern, setNewIndexPattern] = useState('*');
     const [newFieldPath, setNewFieldPath] = useState('');
@@ -18,6 +19,7 @@ export default function ScanFieldsList() {
     const fetchFields = async () => {
         try {
             setLoading(true);
+            setError(null);
             const data = await scanFieldsApi.getAll();
             if (Array.isArray(data)) {
                 setFields(data);
@@ -26,12 +28,14 @@ export default function ScanFieldsList() {
             }
         } catch (error) {
             console.error('Failed to fetch scan fields', error);
-            // Mock data fallback for frontend testing
-            setFields([
-                { id: 1, index_pattern: '*', field_path: 'NameOfMicroService', is_active: true, is_required: true, created_at: new Date().toISOString() },
-                { id: 2, index_pattern: '*', field_path: 'kubernetes.container.name', is_active: true, is_required: true, created_at: new Date().toISOString() },
-                { id: 3, index_pattern: 'bcs-tech-logs-*', field_path: 'system.env', is_active: true, is_required: false, created_at: new Date().toISOString() },
-            ]);
+            const err = error as { response?: { status?: number }; message?: string };
+            if (err.response?.status === 401) {
+                setError('Сессия истекла. Войдите снова.');
+            } else if (err.response?.status === 403) {
+                setError('Нет прав доступа.');
+            } else {
+                setError('Не удалось загрузить дополнительные поля. Проверьте подключение к API.');
+            }
         } finally {
             setLoading(false);
         }
@@ -141,6 +145,27 @@ export default function ScanFieldsList() {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
+                        {error && (
+                            <tr>
+                                <td colSpan={3} className="p-4">
+                                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                                            <div>
+                                                <p className="text-amber-800 font-medium">Ошибка загрузки</p>
+                                                <p className="text-amber-700 text-sm">{error}</p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={fetchFields}
+                                            className="text-sm text-amber-700 hover:text-amber-900 underline flex items-center gap-1"
+                                        >
+                                            <RefreshCw className="w-3.5 h-3.5" /> Повторить
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        )}
                         {loading ? (
                             <tr>
                                 <td colSpan={3} className="px-6 py-8 text-center text-slate-400">Загрузка...</td>
@@ -183,13 +208,13 @@ export default function ScanFieldsList() {
                         )}
                     </tbody>
                 </table>
+                {fields.some(f => f.is_required) && (
+                    <div className="bg-rose-50/50 border-t border-rose-100 px-6 py-3 flex items-start text-xs text-rose-800">
+                        <ShieldAlert className="w-4 h-4 mr-2 text-rose-500 shrink-0" />
+                        <p>Поля с замком (Lock) являются обязательными для базовой работы системы и корректного отделения находок по микросервисам. Их удаление запрещено.</p>
+                    </div>
+                )}
             </div>
-            {fields.some(f => f.is_required) && (
-                <div className="bg-rose-50/50 border-t border-rose-100 px-6 py-3 flex items-start text-xs text-rose-800">
-                    <ShieldAlert className="w-4 h-4 mr-2 text-rose-500 shrink-0" />
-                    <p>Поля с замком (Lock) являются обязательными для базовой работы системы и корректного отделения находок по микросервисам. Их удаление запрещено.</p>
-                </div>
-            )}
         </div>
     );
 }

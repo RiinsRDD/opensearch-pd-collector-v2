@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Plus, Edit2, Save, X } from 'lucide-react';
+import { Trash2, Plus, Edit2, Save, X, RefreshCw } from 'lucide-react';
 import { indexOwnersApi, type IndexOwnerData } from '../../api/client';
 
 export const IndexOwnersList: React.FC = () => {
     const [owners, setOwners] = useState<IndexOwnerData[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const [isAdding, setIsAdding] = useState(false);
@@ -16,8 +16,6 @@ export const IndexOwnersList: React.FC = () => {
         fio: ''
     });
 
-    const [mockMode, setMockMode] = useState(false);
-
     useEffect(() => {
         fetchOwners();
     }, []);
@@ -28,15 +26,15 @@ export const IndexOwnersList: React.FC = () => {
         try {
             const data = await indexOwnersApi.getAll();
             setOwners(data);
-            setMockMode(false);
-        } catch (err: any) {
-            console.error('Failed to fetch owners:', err);
-            setError('Не удалось загрузить владельцев индексов. Используются mock-данные.');
-            setMockMode(true);
-            setOwners([
-                { id: 1, index_pattern: 'bcs-dubai-tech', cmdb_url: 'https://sd-jira.bcs.ru/secure/insight/assets/CMDB-2803910', tech_debt_id: '51495', fio: 'GasanovOI' },
-                { id: 2, index_pattern: 'bcs-copilot-tech', cmdb_url: 'https://sd-jira.bcs.ru/secure/insight/assets/CMDB-2617286', tech_debt_id: '51493', fio: 'KlimenkoKA' }
-            ]);
+        } catch (err) {
+            const error = err as { response?: { status?: number }; message?: string };
+            if (error.response?.status === 401) {
+                setError('Сессия истекла. Войдите снова.');
+            } else if (error.response?.status === 403) {
+                setError('Нет прав доступа.');
+            } else {
+                setError('Не удалось загрузить владельцев индексов. Проверьте подключение к API.');
+            }
         } finally {
             setLoading(false);
         }
@@ -47,26 +45,19 @@ export const IndexOwnersList: React.FC = () => {
 
         try {
             if (editingId) {
-                if (mockMode) {
-                    setOwners(owners.map(o => o.id === editingId ? { ...formData, id: editingId } : o));
-                } else {
-                    const updated = await indexOwnersApi.update(editingId, formData);
-                    setOwners(owners.map(o => o.id === editingId ? updated : o));
-                }
+                const updated = await indexOwnersApi.update(editingId, formData);
+                setOwners(owners.map(o => o.id === editingId ? updated : o));
             } else {
-                if (mockMode) {
-                    setOwners([...owners, { ...formData, id: Date.now() }]);
-                } else {
-                    const created = await indexOwnersApi.create(formData);
-                    setOwners([...owners, created]);
-                }
+                const created = await indexOwnersApi.create(formData);
+                setOwners([...owners, created]);
             }
             setIsAdding(false);
             setEditingId(null);
             setFormData({ index_pattern: '', cmdb_url: '', tech_debt_id: '', fio: '' });
-        } catch (err: any) {
+        } catch (err) {
+            const error = err as { response?: { data?: { detail?: string } }; message?: string };
             console.error('Save failed', err);
-            alert(err.response?.data?.detail || 'Ошибка сохранения');
+            alert(error.response?.data?.detail || 'Ошибка сохранения');
         }
     };
 
@@ -85,12 +76,8 @@ export const IndexOwnersList: React.FC = () => {
         if (!window.confirm('Вы уверены, что хотите удалить эту запись?')) return;
 
         try {
-            if (mockMode) {
-                setOwners(owners.filter(o => o.id !== id));
-            } else {
-                await indexOwnersApi.delete(id);
-                setOwners(owners.filter(o => o.id !== id));
-            }
+            await indexOwnersApi.delete(id);
+            setOwners(owners.filter(o => o.id !== id));
         } catch (err) {
             console.error('Delete failed', err);
             alert('Ошибка удаления');
@@ -119,8 +106,14 @@ export const IndexOwnersList: React.FC = () => {
             </div>
 
             {error && (
-                <div className="p-3 mb-4 text-sm text-amber-200 bg-amber-900/30 border border-amber-700/50 rounded-md">
-                    {error}
+                <div className="p-3 mb-4 text-sm text-amber-200 bg-amber-900/30 border border-amber-700/50 rounded-md flex items-center justify-between">
+                    <span>{error}</span>
+                    <button
+                        onClick={fetchOwners}
+                        className="text-sm text-amber-300 hover:text-amber-100 underline flex items-center gap-1"
+                    >
+                        <RefreshCw className="w-3.5 h-3.5" /> Повторить
+                    </button>
                 </div>
             )}
 

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { IndicesTreeResponse } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
@@ -10,38 +11,70 @@ export const apiClient = axios.create({
     },
 });
 
-export interface IndexTreeData {
-    tree: any[];
-    new_counts: Record<string, number>;
+const TOKEN_KEY = 'pdn_access_token';
+
+export const getToken = (): string | null => {
+    return localStorage.getItem(TOKEN_KEY);
+};
+
+export const setToken = (token: string): void => {
+    localStorage.setItem(TOKEN_KEY, token);
+};
+
+export const clearToken = (): void => {
+    localStorage.removeItem(TOKEN_KEY);
+};
+
+apiClient.interceptors.request.use((config) => {
+    const token = getToken();
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+});
+
+let isRefreshing = false;
+
+apiClient.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (error.response?.status === 401 && !error.config?.url?.includes('/auth/login')) {
+            if (!isRefreshing) {
+                isRefreshing = true;
+                clearToken();
+                window.location.href = '/login';
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
+export interface User {
+    id: number;
+    username: string;
+    role: 'viewer' | 'analyst' | 'admin';
+    is_active: boolean;
 }
 
-export interface PDNPatternData {
-    cache_key: string;
-    index_pattern: string;
-    field_path: string;
-    pdn_type: string;
-    context_type: string;
-    key_hint: string | null;
-    extra_fields: Record<string, string> | null;
-    hit_count: number;
-    status: string;
-    custom_message: string | null;
-    tags: Array<{ id: number; name: string; color: string | null }>;
-    examples: string[];
-    full_document?: Record<string, unknown> | null;
-    has_jira_task: boolean;
+export interface LoginResponse {
+    access_token: string;
+    token_type: string;
 }
 
-export interface TreeNode {
-    id: string;
-    name: string;
-    type: string;
-    children: any;
-    pattern?: PDNPatternData;
-}
+export const authApi = {
+    login: async (username: string, password: string): Promise<LoginResponse> => {
+        const response = await apiClient.post('/auth/login', { username, password });
+        return response.data;
+    },
+
+    me: async (): Promise<User> => {
+        const response = await apiClient.get('/auth/me');
+        return response.data;
+    },
+};
 
 export const indicesApi = {
-    getTree: async (status?: string, tags?: string): Promise<{ tree: TreeNode[]; new_counts: Record<string, number> }> => {
+    getTree: async (status?: string, tags?: string): Promise<IndicesTreeResponse> => {
         const params = new URLSearchParams();
         if (status) params.append('status', status);
         if (tags) params.append('tags', tags);

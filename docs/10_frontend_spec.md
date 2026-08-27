@@ -35,7 +35,8 @@ frontend/
     ├── api/
     │   └── client.ts                  # Axios-клиент и API-функции
     ├── context/
-    │   └── SelectionContext.tsx        # React Context для выделения паттернов
+    │   ├── SelectionContext.tsx        # React Context для выделения паттернов
+    │   └── AuthContext.tsx             # React Context для авторизации (user, login, logout)
     ├── components/
     │   ├── layout/
     │   │   ├── Header.tsx             # Верхняя панель навигации
@@ -52,13 +53,17 @@ frontend/
     │   │   └── ScanFieldsList.tsx     # Дополнительные поля
     │   └── tree/
     │       └── IndicesTree.tsx        # Компонент дерева индексов (Explorer)
+    ├── mocks/
+    │   └── indicesTree.mock.ts        # Архив mockData для дерева (UX-справочник)
     ├── pages/
     │   ├── Dashboard.tsx              # Главная страница (Master-Detail layout)
     │   ├── Settings.tsx               # Страница настроек (fallback defaults при ошибке API)
-    │   └── Tasks.tsx                  # Глобальная история: GET /indices/jira/history
+    │   ├── Tasks.tsx                  # Глобальная история: GET /indices/jira/history
+    │   └── Login.tsx                  # Страница входа (форма username/password)
 
+    ├── utils/
+    │   └── mapIndicesTree.ts          # Маппер API → UI формат дерева
     ├── assets/                        # Статические ресурсы
-    └── utils/                         # Утилиты (пока пусто)
 ```
 
 ## Роутинг (`App.tsx`)
@@ -68,11 +73,11 @@ frontend/
 | `/` | `Dashboard` | Главная: дерево + детали |
 | `/settings` | `Settings` | Настройки системы |
 | `/tasks` | `Tasks` | Глобальная история задач (`indicesApi.getJiraHistory`) |
+| `/login` | `Login` | Страница входа (отдельный layout без Header/StatusBar) |
 | `*` | `Navigate to "/"` | Редирект на главную |
 
-Роута `/login` нет, guard по JWT нет.
-
-Layout: `Header` (сверху) → `main` (контент) → `ScannerStatusBar` (внизу). Всё обёрнуто в `SelectionProvider`.
+Роуты `/`, `/settings`, `/tasks` защищены guard'ом: без валидного пользователя — редирект на `/login`.
+Layout: `Header` (сверху) → `main` (контент) → `ScannerStatusBar` (внизу). Всё обёрнуто в `SelectionProvider` и `AuthProvider`.
 
 ## Компоненты
 
@@ -82,10 +87,24 @@ Layout: `Header` (сверху) → `main` (контент) → `ScannerStatusBa
 
 - **Логотип** «PDN Collector» (ссылка на `/`)
 - **Навигация**: «Сканер» (`/`), «Задачи» (`/tasks`)
-- **Кнопка «Завести задачу в Jira»**: Активна при `selectedPatterns.length > 0` ИЛИ `selectedIndexPattern !== null`. Показывает счётчик `confirmed`
+- **Кнопка «Завести задачу в Jira»**: Активна при `selectedPatterns.length > 0` ИЛИ `selectedIndexPattern !== null`. Показывает счётчик `confirmed`. **Скрыта для роли `viewer`** (RBAC).
 - **Поиск** по хэшам/индексам (input)
 - **Уведомления** (Bell icon с красным dot)
-- **Меню профиля** (dropdown): заголовок «Admin User» захардкожен (не `/auth/me`). Пункты: «Настройки системы» (`/settings`), «Мои Задачи Jira» (`/tasks`), «Выйти» (без сброса токена)
+- **Меню профиля** (dropdown): показывает `user.username` и `user.role` (из `AuthContext`). Цвет аватарки зависит от роли: admin — красный, analyst — янтарный, viewer — синий. Пункты: «Настройки системы» (`/settings`), «Мои Задачи Jira» (`/tasks`), «Выйти» (вызывает `logout()` + редирект на `/login`)
+
+**RBAC в UI** (`utils/rbac.ts`):
+
+Проект использует клиентскую проверку ролей для скрытия/дизаблинга элементов управления (UX, не безопасность — бэкенд возвращает 403). Роли: `viewer` (только чтение), `analyst` (+действия с паттернами и Jira), `admin` (полный доступ). Хелперы в `frontend/src/utils/rbac.ts`:
+- `canCreateJira(role)` — `analyst` | `admin`
+- `canEditPattern(role)` — `analyst` | `admin` (status, custom_message, update examples, false positive)
+- `canDeletePattern(role)` — `admin`
+- `canScan(role)` — `admin`
+- `canWriteSettings(role)` — `admin`
+
+Применяется в:
+- `Header.tsx` — скрытие кнопки «Завести задачу в Jira» для viewer
+- `Dashboard.tsx` — статус/примеры/false positive (analyst+), удаление/скан (admin)
+- `Settings.tsx` — формы General/Jira/PDN parsers/Statuses/Tags: `disabled`/скрыты кнопки сохранения для non-admin
 
 ### `Sidebar.tsx` (`components/layout/`)
 
@@ -99,36 +118,48 @@ Layout: `Header` (сверху) → `main` (контент) → `ScannerStatusBa
 
 Основной компонент дерева. Иерархия в UI: индекс → тип ПДн → cache_key.
 
-**Данные:** сейчас рендерится захардкоженный `mockData` внутри `IndicesTree.tsx`. `GET /api/v1/indices` деревом не вызывается. Это сознательный UI-stub, не live API.
+**Данные:** загружаются из API `GET /api/v1/indices` через `indicesApi.getTree()`. Ответ бэкенда (`IndicesTreeResponse` / `IndexTreeNode`) маппится в UI-формат (`IndexPatternNode[]`) утилитой `mapIndicesTree.ts`. `new_counts` с бэкенда используется для бейджа «new» у индекса.
+
+**Состояния UI:**
+- loading — спиннер в панели дерева
+- error — текст ошибки + кнопка «Повторить» (без подстановки mockData)
+- empty — «Нет паттернов. Запустите seed или скан.»
 
 **Выделение**: Строго одиночное — один cache_key за раз. Выделение индекса также меняет `selectedIndexPattern`.
 
-Кнопки над деревом: «Развернуть всё» / «Свернуть всё». Фильтрация по статусу и тегам.
+Кнопки над деревом: «Развернуть всё» / «Свернуть всё». Фильтрация по тексту (фильтрует загруженные узлы).
 
 **Props**:
 
 ```typescript
 interface IndicesTreeProps {
+    onSelectPatterns: (patterns: PDNPattern[], indexPattern?: string) => void;
     selectedCacheKeys: string[];
     selectedIndexPattern: string | null;
-    onSelectPatterns: (patterns: PDNPattern[], idxPattern?: string | null) => void;
+    scanningIndexPattern?: string | null;
+    reloadKey?: number;
 }
 ```
 
-**Экспортируемый тип**:
+**Экспортируемые типы**:
 
 ```typescript
-interface PDNPattern {
-    cache_key: string;
+interface TypeNode {
+    type: string;
+    count: number;
+    patterns: PDNPattern[];
+}
+
+interface IndexPatternNode {
     index_pattern: string;
-    field_path: string;
-    pdn_type: string;
-    context_type: string;
-    status: string;
-    hit_count: number;
-    tags: string[];
+    total_hits: number;
+    has_new_tasks?: boolean;
+    new_count?: number;
+    types: TypeNode[];
 }
 ```
+
+**Мок-данные:** вынесены в архив `frontend/src/mocks/indicesTree.mock.ts` — только для сверки UX, не используются в продакшене.
 
 ### `SingleScanModal.tsx` (`components/modals/`)
 
@@ -171,7 +202,7 @@ interface PDNPattern {
 - **Статусы и Цвета**: настройка цветов для `StatusSetting`
 - **Управление тегами**: глобальное удаление тегов
 
-> **Отказоустойчивость**: `Settings.tsx` и `ScanFieldsList.tsx` реализованы с fallback-механизмом. Если API-бэкенд недоступен или возвращает некорректные данные, интерфейс загружает тестовые "mock"-данные вместо вечной блокирующей загрузки или выброса React Error (белый экран).
+**Обработка ошибок API**: все вкладки настроек показывают явное состояние ошибки (баннер с текстом ошибки и кнопкой «Повторить») при недоступности бэкенда или 401/403. Fallback-моков данных нет — используются дефолты только как начальные значения формы до ответа сервера.
 
 ### `Tasks.tsx` (`pages/`)
 
@@ -197,7 +228,18 @@ interface SelectionContextType {
 
 ### API-клиент (`api/client.ts`)
 
-Axios-инстанс с `baseURL = VITE_API_BASE_URL || '/api/v1'`. **Нет** request interceptor с Bearer и **нет** редиректа на `/login` при 401.
+Axios-инстанс с `baseURL = VITE_API_BASE_URL || '/api/v1'`.
+
+**Request interceptor**: добавляет `Authorization: Bearer <token>` из `localStorage.pdn_access_token` ко всем запросам.
+
+**Response interceptor**: на 401 (кроме `/auth/login`) — очищает токен и редиректит на `/login`.
+
+```typescript
+export const authApi = {
+    login: async (username: string, password: string): Promise<LoginResponse> => { ... },
+    me: async (): Promise<User> => { ... },
+};
+```
 
 ```typescript
 export const indicesApi = {

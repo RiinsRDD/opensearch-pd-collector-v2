@@ -76,36 +76,41 @@ opensearch-pd-collector-v2/
 │   ├── eslint.config.js
 │   └── src/
 │       ├── main.tsx                   # Точка входа React (BrowserRouter обёртка)
-│       ├── App.tsx                    # Корневой: SelectionProvider → Header → Routes → StatusBar
+│       ├── App.tsx                    # Корневой: AuthProvider → SelectionProvider → Header → Routes → StatusBar
 │       ├── index.css                  # @import "tailwindcss"
 │       ├── api/
-│       │   └── client.ts              # Axios-клиент, indicesApi, scannerApi, settingsApi, types
+│       │   └── client.ts              # Axios-клиент, authApi, indicesApi, scannerApi, settingsApi, types
 │       ├── context/
-│       │   └── SelectionContext.tsx   # selectedPatterns + selectedIndexPattern
+│       │   ├── SelectionContext.tsx   # selectedPatterns + selectedIndexPattern
+│       │   └── AuthContext.tsx        # user, loading, login(), logout(), автозагрузка /me
 │       ├── components/
 │       │   ├── layout/
-│       │   │   ├── Header.tsx         # Навигация, кнопка Jira (с модалкой), поиск, профиль
+│       │   │   ├── Header.tsx         # Навигация, кнопка Jira (скрыта для viewer), поиск, профиль
 │       │   │   ├── Sidebar.tsx        # Боковая навигация (не используется)
 │       │   │   └── ScannerStatusBar.tsx # Статус сканера + polling + модалка логов
 │       │   ├── modals/
-│       │   │   ├── SingleScanModal.tsx # Реальный triggerScan через scannerApi
+│       │   │   ├── SingleScanModal.tsx # Реальный triggerScan через scannerApi (admin only)
 │       │   │   └── ScannerLogsModal.tsx # Реальная загрузка логов
-│       │   ├── settings/              # 8 вкладок настроек
+│       │   ├── settings/              # 8 вкладок настроек (read-only для non-admin)
 │       │   │   ├── GlobalExceptions.tsx
 │       │   │   ├── IndexExceptions.tsx
 │       │   │   ├── IndexOwnersList.tsx
 │       │   │   ├── PdnRegexList.tsx
 │       │   │   └── ScanFieldsList.tsx
 │       │   └── tree/
-│       │       └── IndicesTree.tsx    # Дерево индексов (Explorer, ~18KB) с индикатором сканирования
+│       │       └── IndicesTree.tsx    # Дерево индексов (Explorer) — live API GET /indices, маппинг через utils/mapIndicesTree
 │       ├── pages/
 │       │   ├── Dashboard.tsx          # Master-Detail; raw tab = full_document или «нет документа»
-│       │   ├── Settings.tsx           # Настройки (fallback defaults при ошибке API)
-│       │   └── Tasks.tsx              # GET /indices/jira/history
-│       # Login.tsx нет
+│       │   ├── Settings.tsx           # Настройки (error/empty states, нет silent fallback)
+│       │   ├── Tasks.tsx              # GET /indices/jira/history
+│       │   └── Login.tsx              # Страница входа (username/password, 401/403 handling)
+│       ├── mocks/
+│       │   └── indicesTree.mock.ts    # Архив mockData дерева (UX-справочник, не импортируется в UI)
 │       ├── types/
 │       │   └── api.ts                 # Shared types: PDNPattern, JiraTask, ScannerStatus, etc.
-│       └── utils/                     
+│       └── utils/
+│           ├── mapIndicesTree.ts      # Маппер API IndicesTreeResponse → UI IndexPatternNode[]
+│           └── rbac.ts                # Хелперы RBAC: canCreateJira, canEditPattern, canDeletePattern, canScan, canWriteSettings                     
 │
 ├── tests/                             # ===== ТЕСТЫ =====
 │   ├── conftest.py                    # sqlite+aiosqlite, async_client, db_with_data, JWT override (admin)

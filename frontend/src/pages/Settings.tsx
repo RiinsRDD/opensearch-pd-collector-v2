@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Tag, Palette, Database, Trash2, Filter, FileMinus, X, Plus, Save, Code, Server } from 'lucide-react';
+import { Settings as SettingsIcon, Tag, Palette, Database, Trash2, Filter, FileMinus, X, Plus, Save, Code, Server, AlertTriangle, RefreshCw, Lock } from 'lucide-react';
 import GlobalExceptions from '../components/settings/GlobalExceptions';
 import IndexExceptions from '../components/settings/IndexExceptions';
 import PdnRegexList from '../components/settings/PdnRegexList';
@@ -7,46 +7,57 @@ import ScanFieldsList from '../components/settings/ScanFieldsList';
 import { IndexOwnersList } from '../components/settings/IndexOwnersList';
 import clsx from 'clsx';
 import { settingsApi, type GlobalSettingsData } from '../api/client';
+import { useAuth } from '../context/AuthContext';
+import { canWriteSettings } from '../utils/rbac';
 
 export default function Settings() {
+    const { user } = useAuth();
+    const readOnly = !canWriteSettings(user?.role);
     const [activeTab, setActiveTab] = useState<string>('general');
     const [globalSettings, setGlobalSettings] = useState<GlobalSettingsData | null>(null);
-    const [loadingSettings, setLoadingSettings] = useState(false);
+    const [loadingSettings, setLoadingSettings] = useState(true);
+    const [settingsError, setSettingsError] = useState<string | null>(null);
     const [editingFields, setEditingFields] = useState<Record<string, string>>({});
     const [viewModal, setViewModal] = useState<{ isOpen: boolean, title: string, items: string[] }>({ isOpen: false, title: '', items: [] });
 
+    const defaultSettings: GlobalSettingsData = {
+        pdn_flags: { phone: true, email: true, card: true, fio: false },
+        examples_count: 5, scan_interval_hours: 24,
+        exclude_index_patterns: ['.kibana', '.tasks', '.opensearch-observability'],
+        exclude_index_regexes: ['^\\.ds-logs-.*'],
+        include_index_regexes: ['.*'],
+        mail_service_names: [], unknown_mail_service_parts: [], card_bank_bins_4: [],
+        invalid_def_codes: [], surn_ends_cis: [], surn_ends_world: [], patron_ends: [], fio_special_markers: [],
+        jira_base_url: 'https://jira.bcs.ru', jira_project_key: 'EIB', jira_issue_type: '15400',
+        jira_priority: '4', jira_components: '47920', jira_labels: 'dtsz_auto_pd_discovery',
+        jira_dib_service: 'CMDB-859449', jira_epic_link: 'EIB-15679', jira_cfo: 'CMDB-3968',
+        jira_kipd_type: '68857', jira_task_source: '28834', jira_action_group: '28819',
+        jira_action_type: '28830', jira_process: 'CMDB-2760490', jira_criticality_level: '52414',
+        jira_location_type: '55677', jira_it_system: 'CMDB-1358427', jira_exploit_poc: '68865',
+        jira_cvss_score: 0, jira_column_id: '43720', jira_risk_text: 'Утечка критичных данных',
+        jira_work_description: 'Исключить попадание открытых персональных данных в индексы OpenSearch. Настроить фильтрацию или применение одностороннего хеширования/маскирования для полей, содержащих конфиденциальную информацию.'
+    };
+
     useEffect(() => {
-        if (!globalSettings) {
-            fetchGlobalSettings();
-        }
+        fetchGlobalSettings();
     }, []);
 
     const fetchGlobalSettings = async () => {
-        const defaultSettings: GlobalSettingsData = {
-            pdn_flags: { phone: true, email: true, card: true, fio: false },
-            examples_count: 5, scan_interval_hours: 24,
-            exclude_index_patterns: ['.kibana', '.tasks', '.opensearch-observability'],
-            exclude_index_regexes: ['^\\.ds-logs-.*'],
-            include_index_regexes: ['.*'],
-            mail_service_names: [], unknown_mail_service_parts: [], card_bank_bins_4: [],
-            invalid_def_codes: [], surn_ends_cis: [], surn_ends_world: [], patron_ends: [], fio_special_markers: [],
-            jira_base_url: 'https://jira.bcs.ru', jira_project_key: 'EIB', jira_issue_type: '15400',
-            jira_priority: '4', jira_components: '47920', jira_labels: 'dtsz_auto_pd_discovery',
-            jira_dib_service: 'CMDB-859449', jira_epic_link: 'EIB-15679', jira_cfo: 'CMDB-3968',
-            jira_kipd_type: '68857', jira_task_source: '28834', jira_action_group: '28819',
-            jira_action_type: '28830', jira_process: 'CMDB-2760490', jira_criticality_level: '52414',
-            jira_location_type: '55677', jira_it_system: 'CMDB-1358427', jira_exploit_poc: '68865',
-            jira_cvss_score: 0, jira_column_id: '43720', jira_risk_text: 'Утечка критичных данных',
-            jira_work_description: 'Исключить попадание открытых персональных данных в индексы OpenSearch. Настроить фильтрацию или применение одностороннего хеширования/маскирования для полей, содержащих конфиденциальную информацию.'
-        };
-
+        setLoadingSettings(true);
+        setSettingsError(null);
         try {
-            setLoadingSettings(true);
             const data = await settingsApi.getSettings();
             setGlobalSettings({ ...defaultSettings, ...data });
         } catch (error) {
-            console.error('Failed to load global settings, using fallback mocked data', error);
-            // Mock fallback
+            const err = error as { response?: { status?: number }; message?: string };
+            if (err.response?.status === 401) {
+                setSettingsError('Сессия истекла. Войдите снова.');
+            } else if (err.response?.status === 403) {
+                setSettingsError('Нет прав доступа к настройкам.');
+            } else {
+                setSettingsError('Не удалось загрузить настройки с сервера. Проверьте подключение к API.');
+            }
+            // Keep defaultSettings as initial form values, but mark error
             setGlobalSettings(defaultSettings);
         } finally {
             setLoadingSettings(false);
@@ -149,7 +160,7 @@ export default function Settings() {
                         <div className="text-sm font-semibold text-slate-800">{title}</div>
                         <div className="text-xs text-slate-500">{subtitle}</div>
                     </div>
-                    {!isEditing && (
+                    {!isEditing && !readOnly && (
                         <button onClick={() => handleEditInlineOpen(field)} className="text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-md text-sm font-medium transition cursor-pointer">
                             Изменить ({items.length})
                         </button>
@@ -204,9 +215,11 @@ export default function Settings() {
                         <div className="text-sm font-semibold text-slate-800">{title}</div>
                         <div className="text-xs text-slate-500">{subtitle}</div>
                     </div>
+                    {!readOnly && (
                     <button onClick={() => handleArrayAdd(field)} className="text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-md text-sm font-medium flex items-center transition">
                         <Plus className="w-4 h-4 mr-1" /> Добавить
                     </button>
+                    )}
                 </div>
                 <div className="flex flex-wrap gap-2">
                     {items.length === 0 && <span className="text-sm text-slate-400 italic">Нет записей</span>}
@@ -351,22 +364,44 @@ export default function Settings() {
 
                         {activeTab === 'general' && (
                             <>
+                                {settingsError && (
+                                    <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
+                                        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                                        <div className="flex-1">
+                                            <p className="text-amber-800 font-medium">Ошибка загрузки настроек</p>
+                                            <p className="text-amber-700 text-sm mt-1">{settingsError}</p>
+                                            <button
+                                                onClick={fetchGlobalSettings}
+                                                className="mt-2 text-sm text-amber-700 hover:text-amber-900 underline flex items-center gap-1"
+                                            >
+                                                <RefreshCw className="w-3.5 h-3.5" /> Повторить
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                                 {loadingSettings || !globalSettings ? (
                                     <div className="text-slate-500 text-sm">Загрузка настроек...</div>
                                 ) : (
-                                    <>
+                                    <fieldset disabled={readOnly} className="space-y-6 border-0 p-0 m-0">
+                                    {readOnly && (
+                                        <div className="mb-4 p-3 bg-slate-100 border border-slate-200 rounded-lg flex items-center gap-2 text-sm text-slate-600">
+                                            <Lock className="w-4 h-4" /> Режим только чтение (нет прав на запись настроек)
+                                        </div>
+                                    )}
                                         {/* Глобальные параметры */}
                                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                                             <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
                                                 <h3 className="font-semibold text-slate-800 flex items-center">
                                                     <Database className="w-4 h-4 mr-2" /> Базовые настройки
                                                 </h3>
+                                                {!readOnly && (
                                                 <button
                                                     onClick={saveSettingsServer}
                                                     className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded shadow-sm hover:bg-indigo-700 flex items-center transition"
                                                 >
                                                     <Save className="w-4 h-4 mr-2" /> Сохранить общие настройки
                                                 </button>
+                                                )}
                                             </div>
                                             <div className="p-6 space-y-4">
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -421,7 +456,7 @@ export default function Settings() {
                                             {renderArrayList('exclude_index_regexes', 'Исключить по регулярному выражению (Regex)', 'Если имя индекса совпадает с регулярным выражением, он игнорируется.')}
                                             {renderArrayList('include_index_regexes', 'Разрешить мониторинг (Include Regex)', 'Сканируются только индексы, подпадающие под одно из разрешающих выражений. (.* для всех)')}
                                         </div>
-                                    </>
+                                    </fieldset>
                                 )}
                             </>
                         )}
@@ -485,20 +520,37 @@ export default function Settings() {
 
                         {activeTab === 'jira' && (
                             <>
+                                {settingsError && (
+                                    <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
+                                        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                                        <div className="flex-1">
+                                            <p className="text-amber-800 font-medium">Ошибка загрузки настроек</p>
+                                            <p className="text-amber-700 text-sm mt-1">{settingsError}</p>
+                                            <button
+                                                onClick={fetchGlobalSettings}
+                                                className="mt-2 text-sm text-amber-700 hover:text-amber-900 underline flex items-center gap-1"
+                                            >
+                                                <RefreshCw className="w-3.5 h-3.5" /> Повторить
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                                 {loadingSettings || !globalSettings ? (
                                     <div className="text-slate-500 text-sm">Загрузка настроек...</div>
                                 ) : (
-                                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                    <fieldset disabled={readOnly} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                                         <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
                                             <h3 className="font-semibold text-slate-800 flex items-center">
                                                 <Server className="w-4 h-4 mr-2" /> Настройки Jira
                                             </h3>
+                                            {!readOnly && (
                                             <button
                                                 onClick={saveSettingsServer}
                                                 className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded shadow-sm hover:bg-indigo-700 flex items-center transition"
                                             >
                                                 <Save className="w-4 h-4 mr-2" /> Сохранить
                                             </button>
+                                            )}
                                         </div>
 
                                         <div className="p-6">
@@ -591,7 +643,7 @@ export default function Settings() {
 
                                             </div>
                                         </div>
-                                    </div>
+                                    </fieldset>
                                 )}
                             </>
                         )}
@@ -622,9 +674,11 @@ export default function Settings() {
                                         ))}
                                     </div>
                                     <div className="mt-6 pt-4 border-t border-slate-100">
+                                        {!readOnly && (
                                         <button className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md shadow-sm">
                                             Сохранить цвета
                                         </button>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -638,18 +692,20 @@ export default function Settings() {
                                 </div>
                                 <div className="p-6">
                                     <div className="flex flex-wrap gap-3">
-                                        {tags.map(tag => (
-                                            <div key={tag} className="flex items-center bg-slate-100 border border-slate-200 rounded-md px-3 py-1.5">
-                                                <span className="text-sm font-medium text-slate-700 mr-2">#{tag}</span>
-                                                <button
-                                                    onClick={() => handleDeleteTag(tag)}
-                                                    className="text-slate-400 hover:text-red-500 transition-colors"
-                                                    title="Удалить глобально"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        ))}
+{tags.map(tag => (
+                                                <div key={tag} className="flex items-center bg-slate-100 border border-slate-200 rounded-md px-3 py-1.5">
+                                                    <span className="text-sm font-medium text-slate-700 mr-2">#{tag}</span>
+                                                    {!readOnly && (
+                                                    <button
+                                                        onClick={() => handleDeleteTag(tag)}
+                                                        className="text-slate-400 hover:text-red-500 transition-colors"
+                                                        title="Удалить глобально"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                    )}
+                                                </div>
+                                            ))}
                                     </div>
                                 </div>
                             </div>

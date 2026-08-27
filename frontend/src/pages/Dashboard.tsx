@@ -5,12 +5,19 @@ import 'react-json-view-lite/dist/index.css';
 import { FileText, Database, ShieldAlert, Clock, Tag, CheckSquare, Search, ChevronRight, Key, AlertTriangle, RefreshCw, Trash2, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 import { useSelection } from '../context/SelectionContext';
+import { useAuth } from '../context/AuthContext';
 import SingleScanModal from '../components/modals/SingleScanModal';
 import { indicesApi, scannerApi } from '../api/client';
+import { canEditPattern, canDeletePattern, canScan } from '../utils/rbac';
 import type { PDNPattern, ScannerStatus as ScannerStatusType } from '../types/api';
 
 export default function Dashboard() {
     const { selectedPatterns, setSelectedPatterns, selectedIndexPattern, setSelectedIndexPattern } = useSelection();
+    const { user } = useAuth();
+    const role = user?.role;
+    const canEdit = canEditPattern(role);
+    const canDelete = canDeletePattern(role);
+    const canTriggerScan = canScan(role);
     const [activeTab, setActiveTab] = useState<'pattern' | 'examples' | 'raw'>('pattern');
     const [taskSearch, setTaskSearch] = useState('');
     const [isSingleScanModalOpen, setIsSingleScanModalOpen] = useState(false);
@@ -241,9 +248,10 @@ export default function Dashboard() {
                                                         primaryPattern.status === 'unverified' && "bg-slate-200 text-slate-800"
                                                     )}>
                                                         <select
-                                                            className="bg-transparent border-none focus:ring-0 outline-none cursor-pointer"
+                                                            className="bg-transparent border-none focus:ring-0 outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                                                             value={primaryPattern.status}
                                                             onChange={(e) => handleStatusChange(e.target.value)}
+                                                            disabled={!canEdit}
                                                         >
                                                             <option value="new">New</option>
                                                             <option value="confirmed">Confirmed</option>
@@ -334,6 +342,7 @@ export default function Dashboard() {
 
                                     {/* Быстрые действия */}
                                     <div className="flex space-x-3">
+                                        {canEdit && (
                                         <button
                                             className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-md shadow-sm transition-colors flex items-center"
                                             onClick={handleUpdateExamples}
@@ -341,6 +350,8 @@ export default function Dashboard() {
                                             <RefreshCw className="w-4 h-4 mr-2" />
                                             Обновить примеры
                                         </button>
+                                        )}
+                                        {canDelete && (
                                         <button
                                             className="px-4 py-2 bg-white border border-slate-300 hover:bg-red-50 hover:text-red-700 text-slate-700 text-sm font-medium rounded-md shadow-sm transition-colors flex items-center"
                                             onClick={handleDeletePattern}
@@ -348,6 +359,8 @@ export default function Dashboard() {
                                             <Trash2 className="w-4 h-4 mr-2" />
                                             Удалить из БД
                                         </button>
+                                        )}
+                                        {canEdit && (
                                         <button
                                             className="px-4 py-2 bg-green-50 border border-green-200 hover:bg-green-100 text-green-700 text-sm font-medium rounded-md shadow-sm transition-colors flex items-center"
                                             onClick={handleFalsePositive}
@@ -355,12 +368,14 @@ export default function Dashboard() {
                                             <AlertCircle className="w-4 h-4 mr-2" />
                                             Отметить как False Positive
                                         </button>
+                                        )}
                                     </div>
 
                                     {/* Кастомное сообщение для Jira */}
                                     <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm mt-6">
                                         <h3 className="text-sm font-semibold text-slate-800 mb-2">Комментарий к задаче (Custom Message)</h3>
                                         <p className="text-xs text-slate-500 mb-3">Этот текст будет добавлен в описание задачи в Jira при её создании.</p>
+                                        {canEdit ? (
                                         <textarea
                                             className="w-full text-sm border border-slate-300 rounded-md p-3 focus:ring-blue-500 focus:border-blue-500"
                                             rows={4}
@@ -368,6 +383,11 @@ export default function Dashboard() {
                                             defaultValue={primaryPattern.custom_message || ''}
                                             onBlur={(e) => handleCustomMessageBlur(e.target.value)}
                                         />
+                                        ) : (
+                                        <div className="text-sm text-slate-500 italic">
+                                            {primaryPattern.custom_message || 'Нет комментария (только для просмотра)'}
+                                        </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -426,6 +446,7 @@ export default function Dashboard() {
                                 </h2>
                                 <p className="text-slate-500 text-sm ml-9 mb-4">Список задач, заведенных конкретно по этому индексу</p>
                             </div>
+                            {canTriggerScan && (
                             <button
                                 onClick={() => setIsSingleScanModalOpen(true)}
                                 className="flex items-center px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-md shadow-sm transition-colors mt-1"
@@ -433,6 +454,13 @@ export default function Dashboard() {
                                 <Search className="w-4 h-4 mr-2 text-indigo-500" />
                                 Одиночное сканирование (Single Scan)
                             </button>
+                            )}
+                            {!canTriggerScan && (
+                                <span className="flex items-center px-4 py-2 text-slate-400 text-sm mt-1" title="Только для admin">
+                                    <Search className="w-4 h-4 mr-2 text-slate-300" />
+                                    Сканирование недоступно
+                                </span>
+                            )}
                         </div>
 
                         {/* Контент вкладок (Задачи или История) */}

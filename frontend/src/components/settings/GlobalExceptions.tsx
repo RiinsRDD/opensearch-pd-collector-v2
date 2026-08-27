@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { exclusionsApi, pdnTypesApi } from '../../api/client';
-import { Trash2, Plus } from 'lucide-react';
+import { Trash2, Plus, RefreshCw, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 
 export default function GlobalExceptions() {
     const [exclusions, setExclusions] = useState<any[]>([]);
     const [activeType, setActiveType] = useState<string>('phone');
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     // Form state
     const [ruleType, setRuleType] = useState('full_path_key.exclude');
@@ -39,6 +40,7 @@ export default function GlobalExceptions() {
     const fetchExclusions = async () => {
         try {
             setLoading(true);
+            setError(null);
             const data = await exclusionsApi.getGlobal();
             if (Array.isArray(data)) {
                 setExclusions(data);
@@ -47,13 +49,14 @@ export default function GlobalExceptions() {
             }
         } catch (error) {
             console.error("Failed to fetch global exclusions", error);
-            // Фолбэк на моковые данные для визуальной проверки пользователем
-            setExclusions([
-                { id: 1, pdn_type: 'phone', rule_type: 'full_path_key.exclude', value: 'profile.phone_number' },
-                { id: 2, pdn_type: 'email', rule_type: 'suffix_exclude', value: '@test.com' },
-                { id: 3, pdn_type: 'fio', rule_type: 'exclude_key', value: 'test_fio' },
-                { id: 4, pdn_type: 'card', rule_type: 'full_path_key.exclude', value: 'payment.card_info' }
-            ]);
+            const err = error as { response?: { status?: number }; message?: string };
+            if (err.response?.status === 401) {
+                setError('Сессия истекла. Войдите снова.');
+            } else if (err.response?.status === 403) {
+                setError('Нет прав доступа.');
+            } else {
+                setError('Не удалось загрузить глобальные исключения. Проверьте подключение к API.');
+            }
         } finally {
             setLoading(false);
         }
@@ -135,6 +138,24 @@ export default function GlobalExceptions() {
                         <Plus className="w-4 h-4 mr-1" /> Add Rule
                     </button>
                 </form>
+
+                {error && (
+                    <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                            <div>
+                                <p className="text-amber-800 font-medium">Ошибка загрузки</p>
+                                <p className="text-amber-700 text-sm">{error}</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={fetchExclusions}
+                            className="text-sm text-amber-700 hover:text-amber-900 underline flex items-center gap-1"
+                        >
+                            <RefreshCw className="w-3.5 h-3.5" /> Повторить
+                        </button>
+                    </div>
+                )}
 
                 {loading ? (
                     <div className="text-sm text-slate-500">Loading...</div>

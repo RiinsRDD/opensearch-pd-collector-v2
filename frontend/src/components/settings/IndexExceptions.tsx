@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { exclusionsApi } from '../../api/client';
-import { Trash2, Plus, Search } from 'lucide-react';
+import { Trash2, Plus, Search, RefreshCw, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 
 export default function IndexExceptions() {
@@ -11,6 +11,8 @@ export default function IndexExceptions() {
     const [exclusions, setExclusions] = useState<any[]>([]);
     const [activeType, setActiveType] = useState<string>('phone');
     const [loading, setLoading] = useState(false);
+    const [indicesError, setIndicesError] = useState<string | null>(null);
+    const [exclusionsError, setExclusionsError] = useState<string | null>(null);
 
     // Form state
     const [keyPath, setKeyPath] = useState('');
@@ -25,8 +27,7 @@ export default function IndexExceptions() {
             })
             .catch(err => {
                 console.error(err);
-                // Фолбэк на моковые индексы для визуальной проверки
-                setIndicesList(['test-index-1*', 'prod-logs-frontend-*', 'billing-events-2023.*']);
+                setIndicesError('Не удалось загрузить список индексов');
             });
     }, []);
 
@@ -35,12 +36,14 @@ export default function IndexExceptions() {
             fetchExclusions();
         } else {
             setExclusions([]);
+            setExclusionsError(null);
         }
     }, [selectedIndexPattern]);
 
     const fetchExclusions = async () => {
         try {
             setLoading(true);
+            setExclusionsError(null);
             const data = await exclusionsApi.getIndex(selectedIndexPattern);
             if (Array.isArray(data)) {
                 setExclusions(data);
@@ -49,12 +52,14 @@ export default function IndexExceptions() {
             }
         } catch (error) {
             console.error("Failed to fetch index exclusions", error);
-            // Фолбэк на моковые данные для визуальной проверки
-            setExclusions([
-                { id: 1, index_pattern: selectedIndexPattern, pdn_type: 'phone', key_path: 'user.phone' },
-                { id: 2, index_pattern: selectedIndexPattern, pdn_type: 'email', key_path: 'user.email' },
-                { id: 3, index_pattern: selectedIndexPattern, pdn_type: 'fio', key_path: 'customer.full_name' }
-            ]);
+            const err = error as { response?: { status?: number }; message?: string };
+            if (err.response?.status === 401) {
+                setExclusionsError('Сессия истекла. Войдите снова.');
+            } else if (err.response?.status === 403) {
+                setExclusionsError('Нет прав доступа.');
+            } else {
+                setExclusionsError('Не удалось загрузить исключения индекса. Проверьте подключение к API.');
+            }
         } finally {
             setLoading(false);
         }
@@ -115,6 +120,31 @@ export default function IndexExceptions() {
                         ))}
                     </datalist>
                 </div>
+
+                {indicesError && (
+                    <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                            <div>
+                                <p className="text-amber-800 font-medium text-sm">Ошибка загрузки индексов</p>
+                                <p className="text-amber-700 text-xs">{indicesError}</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => {
+                                setIndicesError(null);
+                                exclusionsApi.getIndicesList()
+                                    .then(data => {
+                                        if (Array.isArray(data)) setIndicesList(data);
+                                    })
+                                    .catch(() => {});
+                            }}
+                            className="text-xs text-amber-700 hover:text-amber-900 underline flex items-center gap-1"
+                        >
+                            <RefreshCw className="w-3 h-3" /> Повторить
+                        </button>
+                    </div>
+                )}
             </div>
 
             {selectedIndexPattern ? (
@@ -151,6 +181,24 @@ export default function IndexExceptions() {
                                 <Plus className="w-4 h-4 mr-1" /> Add Exclusion
                             </button>
                         </form>
+
+                        {exclusionsError && (
+                            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                                    <div>
+                                        <p className="text-amber-800 font-medium">Ошибка загрузки</p>
+                                        <p className="text-amber-700 text-sm">{exclusionsError}</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={fetchExclusions}
+                                    className="text-sm text-amber-700 hover:text-amber-900 underline flex items-center gap-1"
+                                >
+                                    <RefreshCw className="w-3.5 h-3.5" /> Повторить
+                                </button>
+                            </div>
+                        )}
 
                         {loading ? (
                             <div className="text-sm text-slate-500">Loading...</div>

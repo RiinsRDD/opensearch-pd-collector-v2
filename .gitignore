@@ -43,5 +43,6 @@ docs_archived/
 notes/
 notes_*.txt
 .kilo/
+tests/_test_mock_data/
 
 .grepai/

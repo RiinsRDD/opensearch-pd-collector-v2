@@ -1,6 +1,8 @@
-import { useState, useMemo } from 'react';
-import { ChevronRight, ChevronDown, Folder, Hash, Key, FileText, AlertTriangle, File, Filter, Activity } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { ChevronRight, ChevronDown, Folder, Hash, Key, FileText, AlertTriangle, File, Filter, Activity, RefreshCw, AlertCircle, Database } from 'lucide-react';
 import clsx from 'clsx';
+import { indicesApi } from '../../api/client';
+import { mapIndicesTree, filterIndicesTree } from '../../utils/mapIndicesTree';
 import type { PDNPattern } from '../../types/api';
 
 export interface TypeNode {
@@ -22,117 +24,54 @@ interface IndicesTreeProps {
     selectedCacheKeys: string[];
     selectedIndexPattern: string | null;
     scanningIndexPattern?: string | null;
+    reloadKey?: number;
 }
 
-const mockData: IndexPatternNode[] = [
-    {
-        index_pattern: 'bcs-tech-logs-*',
-        total_hits: 42,
-        has_new_tasks: true,
-        new_count: 5,
-        types: [
-            {
-                type: 'PHONE',
-                count: 28,
-                patterns: [
-                    {
-                        cache_key: 'a8f2c184', field_path: 'req.body.client_phone', pdn_type: 'PHONE',
-                        index_pattern: 'bcs-tech-logs-*', context_type: 'base', key_hint: null,
-                        extra_fields: { 'NameOfMicroService': 'auth-svc', 'kubernetes.container.name': 'api-gw' },
-                        hit_count: 12, status: 'new', custom_message: null,
-                        tags: [], examples: ['79265554433', '79261234567', '79268889999'],
-                        has_jira_task: false,
-                    },
-                    {
-                        cache_key: 'c4e9b321', field_path: 'user.phone', pdn_type: 'PHONE',
-                        index_pattern: 'bcs-tech-logs-*', context_type: 'base', key_hint: null,
-                        extra_fields: { 'NameOfMicroService': 'user-svc', 'kubernetes.container.name': 'main-app' },
-                        hit_count: 5, status: 'confirmed', custom_message: null,
-                        tags: [], examples: ['79261234567'],
-                        has_jira_task: true,
-                    },
-                    {
-                        cache_key: 'f1a2b349', field_path: 'message', pdn_type: 'PHONE',
-                        index_pattern: 'bcs-tech-logs-*', context_type: 'structured_key', key_hint: 'phone',
-                        extra_fields: { 'NameOfMicroService': 'api-gw', 'kubernetes.container.name': 'worker-pod' },
-                        hit_count: 8, status: 'new', custom_message: null,
-                        tags: [], examples: ['79265554433', '79268889999', '79261112222'],
-                        has_jira_task: false,
-                    },
-                    {
-                        cache_key: 'd7c8e1a2', field_path: 'message', pdn_type: 'PHONE',
-                        index_pattern: 'bcs-tech-logs-*', context_type: 'free_text', key_hint: null,
-                        extra_fields: { 'NameOfMicroService': 'logger-svc', 'kubernetes.container.name': 'logger-pod' },
-                        hit_count: 3, status: 'confirmed', custom_message: null,
-                        tags: [], examples: ['79261234567'],
-                        has_jira_task: false,
-                    },
-                    {
-                        cache_key: 'b2a1c4df', field_path: 'raw_message', pdn_type: 'PHONE',
-                        index_pattern: 'bcs-tech-logs-*', context_type: 'ambiguous', key_hint: 'данные клиента',
-                        extra_fields: { 'NameOfMicroService': 'api-gw', 'kubernetes.container.name': 'api-gw' },
-                        hit_count: 1, status: 'new', custom_message: null,
-                        tags: [], examples: ['79265554433'],
-                        has_jira_task: false,
-                    }
-                ]
-            },
-            {
-                type: 'EMAIL',
-                count: 14,
-                patterns: [
-                    {
-                        cache_key: 'e5f6a7b8', field_path: 'metadata.user.email', pdn_type: 'EMAIL',
-                        index_pattern: 'bcs-tech-logs-*', context_type: 'base', key_hint: null,
-                        extra_fields: { 'NameOfMicroService': 'auth-svc', 'kubernetes.container.name': 'auth-pod' },
-                        hit_count: 9, status: 'new', custom_message: null,
-                        tags: [], examples: ['test@bcs.ru', 'admin@bcs.ru'],
-                        has_jira_task: false,
-                    },
-                    {
-                        cache_key: 'a1b2c3d4', field_path: 'log.body', pdn_type: 'EMAIL',
-                        index_pattern: 'bcs-tech-logs-*', context_type: 'structured_key', key_hint: 'email',
-                        extra_fields: { 'NameOfMicroService': 'mailer-svc', 'kubernetes.container.name': 'mail-pod' },
-                        hit_count: 5, status: 'unverified', custom_message: null,
-                        tags: [], examples: ['user@example.com'],
-                        has_jira_task: false,
-                    }
-                ]
-            }
-        ]
-    },
-    {
-        index_pattern: 'client-activity-api-*',
-        total_hits: 5,
-        has_new_tasks: false,
-        types: []
-    }
-];
+interface TreeState {
+    data: IndexPatternNode[];
+    loading: boolean;
+    error: string | null;
+}
 
-export default function IndicesTree({ onSelectPatterns, selectedCacheKeys, selectedIndexPattern, scanningIndexPattern }: IndicesTreeProps) {
+export default function IndicesTree({
+    onSelectPatterns,
+    selectedCacheKeys,
+    selectedIndexPattern,
+    scanningIndexPattern,
+    reloadKey = 0
+}: IndicesTreeProps) {
+    const [state, setState] = useState<TreeState>({
+        data: [],
+        loading: true,
+        error: null,
+    });
     const [expandedIndices, setExpandedIndices] = useState<Record<string, boolean>>({});
     const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>({});
     const [filterText, setFilterText] = useState('');
 
-    const filteredData = useMemo(() => {
-        if (!filterText.trim()) return mockData;
-        const lowerFilter = filterText.toLowerCase();
+    const fetchTree = useCallback(async () => {
+        setState(prev => ({ ...prev, loading: true, error: null }));
+        try {
+            const response = await indicesApi.getTree();
+            const mapped = mapIndicesTree(response);
+            setState({ data: mapped, loading: false, error: null });
+        } catch (err) {
+            const error = err as { response?: { status?: number }; message?: string };
+            if (error.response?.status === 401) {
+                setState({ data: [], loading: false, error: 'Сессия истекла. Войдите снова.' });
+            } else if (error.response?.status === 403) {
+                setState({ data: [], loading: false, error: 'Нет прав доступа.' });
+            } else {
+                setState({ data: [], loading: false, error: 'Не удалось загрузить дерево. Проверьте подключение к API.' });
+            }
+        }
+    }, []);
 
-        return mockData.map(idx => {
-            const filteredTypes = idx.types.map(t => {
-                const filteredPatterns = t.patterns.filter(p =>
-                    p.status.toLowerCase().includes(lowerFilter) ||
-                    p.tags.some(tag => tag.name.toLowerCase().includes(lowerFilter)) ||
-                    p.field_path.toLowerCase().includes(lowerFilter) ||
-                    (p.key_hint && p.key_hint.toLowerCase().includes(lowerFilter)) ||
-                    (p.extra_fields && Object.values(p.extra_fields).some(val => val.toLowerCase().includes(lowerFilter)))
-                );
-                return { ...t, patterns: filteredPatterns };
-            }).filter(t => t.patterns.length > 0 || t.type.toLowerCase().includes(lowerFilter));
+    useEffect(() => {
+        fetchTree();
+    }, [fetchTree, reloadKey]);
 
-            return { ...idx, types: filteredTypes };
-        }).filter(idx => idx.types.length > 0 || idx.index_pattern.toLowerCase().includes(lowerFilter));
-    }, [filterText]);
+    const filteredData = useMemo(() => filterIndicesTree(state.data, filterText), [state.data, filterText]);
 
     const toggleIndex = (name: string) => setExpandedIndices(prev => ({ ...prev, [name]: !prev[name] }));
     const toggleType = (indexName: string, typeName: string) => setExpandedTypes(prev => ({ ...prev, [`${indexName}-${typeName}`]: !prev[`${indexName}-${typeName}`] }));
@@ -170,6 +109,126 @@ export default function IndicesTree({ onSelectPatterns, selectedCacheKeys, selec
         toggleIndex(idx.index_pattern);
     };
 
+    const handleRetry = () => {
+        fetchTree();
+    };
+
+    if (state.loading) {
+        return (
+            <div className="flex flex-col h-full bg-slate-50">
+                <div className="px-3 py-3 border-b border-slate-200 bg-white">
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center">
+                            <Folder className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> Файловая система
+                        </span>
+                    </div>
+                </div>
+                <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center space-y-3">
+                        <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                        <p className="text-slate-500 text-sm">Загрузка дерева индексов...</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (state.error) {
+        return (
+            <div className="flex flex-col h-full bg-slate-50">
+                <div className="px-3 py-3 border-b border-slate-200 bg-white">
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center">
+                            <Folder className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> Файловая система
+                        </span>
+                    </div>
+                </div>
+                <div className="flex-1 flex items-center justify-center p-4">
+                    <div className="text-center space-y-3 max-w-xs">
+                        <AlertCircle className="w-12 h-12 text-red-400 mx-auto" />
+                        <p className="text-slate-700">{state.error}</p>
+                        <button
+                            onClick={handleRetry}
+                            className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors"
+                        >
+                            <RefreshCw className="w-4 h-4 mr-1 inline" /> Повторить
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (filteredData.length === 0 && state.data.length === 0) {
+        return (
+            <div className="flex flex-col h-full bg-slate-50">
+                <div className="px-3 py-3 border-b border-slate-200 bg-white">
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center">
+                            <Folder className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> Файловая система
+                        </span>
+                    </div>
+                    <div className="relative mt-3">
+                        <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
+                            <Filter className="h-3 w-3 text-slate-400" />
+                        </div>
+                        <input
+                            type="text"
+                            value={filterText}
+                            onChange={(e) => setFilterText(e.target.value)}
+                            className="block w-full pl-7 pr-2 py-1.5 text-xs bg-white border border-slate-300 rounded shadow-sm text-slate-700 placeholder-slate-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                            placeholder="Поиск по индексу, полю или тегу..."
+                        />
+                    </div>
+                </div>
+                <div className="flex-1 flex items-center justify-center p-4">
+                    <div className="text-center space-y-2">
+                        <Database className="w-12 h-12 text-slate-300 mx-auto" />
+                        <p className="text-slate-500">Нет паттернов</p>
+                        <p className="text-xs text-slate-400">Запустите seed или сканер</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (filteredData.length === 0 && state.data.length > 0) {
+        return (
+            <div className="flex flex-col h-full bg-slate-50">
+                <div className="px-3 py-3 border-b border-slate-200 bg-white flex flex-col shrink-0 space-y-3">
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center">
+                            <Folder className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> Файловая система
+                        </span>
+                        <div className="flex space-x-1">
+                            <button onClick={expandAll} className="text-[10px] px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded text-slate-600 transition-colors shadow-sm">Развернуть</button>
+                            <button onClick={collapseAll} className="text-[10px] px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded text-slate-600 transition-colors shadow-sm">Свернуть</button>
+                        </div>
+                    </div>
+                    <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
+                            <Filter className="h-3 w-3 text-slate-400" />
+                        </div>
+                        <input
+                            type="text"
+                            value={filterText}
+                            onChange={(e) => setFilterText(e.target.value)}
+                            className="block w-full pl-7 pr-2 py-1.5 text-xs bg-white border border-slate-300 rounded shadow-sm text-slate-700 placeholder-slate-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                            placeholder="Поиск по индексу, полю или тегу..."
+                        />
+                    </div>
+                </div>
+                <div className="flex-1 flex items-center justify-center p-4">
+                    <div className="text-center space-y-2">
+                        <Filter className="w-12 h-12 text-slate-300 mx-auto" />
+                        <p className="text-slate-500">Ничего не найдено</p>
+                        <p className="text-xs text-slate-400">Попробуйте изменить фильтр</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="flex flex-col h-full bg-slate-50 text-slate-700 font-sans selection:bg-blue-100">
             <div className="px-3 py-3 border-b border-slate-200 bg-white flex flex-col shrink-0 space-y-3">
@@ -178,8 +237,8 @@ export default function IndicesTree({ onSelectPatterns, selectedCacheKeys, selec
                         <Folder className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> Файловая система
                     </span>
                     <div className="flex space-x-1">
-                        <button onClick={expandAll} className="text-[10px] px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded text-slate-600 transition-colors shadow-sm">Разварачивать</button>
-                        <button onClick={collapseAll} className="text-[10px] px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded text-slate-600 transition-colors shadow-sm">Сворачивать</button>
+                        <button onClick={expandAll} className="text-[10px] px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded text-slate-600 transition-colors shadow-sm">Развернуть</button>
+                        <button onClick={collapseAll} className="text-[10px] px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded text-slate-600 transition-colors shadow-sm">Свернуть</button>
                     </div>
                 </div>
                 <div className="relative">
@@ -278,18 +337,18 @@ export default function IndicesTree({ onSelectPatterns, selectedCacheKeys, selec
                                                                 >
                                                                     <div className="flex items-center">
 {/* Иконка */}
-                                                                         {pattern.context_type === 'structured_key' ? <Key className="w-3.5 h-3.5 mr-2 text-emerald-500 shrink-0" /> :
-                                                                             pattern.context_type === 'free_text' ? <FileText className="w-3.5 h-3.5 mr-2 text-blue-500 shrink-0" /> :
-                                                                                 pattern.context_type === 'ambiguous' ? <AlertTriangle className="w-3.5 h-3.5 mr-2 text-amber-500 shrink-0" /> :
-                                                                                     <File className="w-3.5 h-3.5 mr-2 text-emerald-500 shrink-0" />}
+                                                                        {pattern.context_type === 'structured_key' ? <Key className="w-3.5 h-3.5 mr-2 text-emerald-500 shrink-0" /> :
+                                                                            pattern.context_type === 'free_text' ? <FileText className="w-3.5 h-3.5 mr-2 text-blue-500 shrink-0" /> :
+                                                                                pattern.context_type === 'ambiguous' ? <AlertTriangle className="w-3.5 h-3.5 mr-2 text-amber-500 shrink-0" /> :
+                                                                                    <File className="w-3.5 h-3.5 mr-2 text-emerald-500 shrink-0" />}
 
-                                                                         {/* Имя поля */}
-                                                                        <span className={clsx("text-[13px] tracking-tight", isSelected ? "text-blue-900 font-semibold" : "text-slate-700 font-medium")}>
+                                                                        {/* Имя поля */}
+                                                                       <span className={clsx("text-[13px] tracking-tight", isSelected ? "text-blue-900 font-semibold" : "text-slate-700 font-medium")}>
                                                                             {pattern.field_path}
                                                                         </span>
 
 {/* Бейджи контекста INLINE (для Mode B) */}
-                                                                         {pattern.context_type !== 'base' && (
+                                                                        {pattern.context_type !== 'base' && (
                                                                             <div className="flex items-center ml-2 space-x-1.5">
                                                                                 {pattern.context_type === 'structured_key' && (
                                                                                     <>
@@ -318,8 +377,8 @@ export default function IndicesTree({ onSelectPatterns, selectedCacheKeys, selec
                                                                     </div>
 
 {/* Дополнительные поля (Extra fields & Key hints for Mode A) */}
-                                                                     <div className="mt-1.5 ml-[26px] flex flex-wrap gap-1.5">
-                                                                         {pattern.context_type === 'structured_key' && pattern.key_hint && (
+                                                                    <div className="mt-1.5 ml-[26px] flex flex-wrap gap-1.5">
+                                                                        {pattern.context_type === 'structured_key' && pattern.key_hint && (
                                                                             <span className="text-[10px] px-1.5 py-[3px] bg-emerald-50 text-emerald-600 rounded-lg border border-emerald-200 leading-none shadow-sm font-medium">
                                                                                 key: {pattern.key_hint}
                                                                             </span>
@@ -347,4 +406,3 @@ export default function IndicesTree({ onSelectPatterns, selectedCacheKeys, selec
         </div>
     );
 }
-

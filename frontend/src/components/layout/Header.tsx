@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
-import { Bell, Search, Settings, CheckSquare, ChevronDown, Database, X } from 'lucide-react';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { Bell, Search, Settings, CheckSquare, ChevronDown, Database, X, LogOut } from 'lucide-react';
 import { useSelection } from '../../context/SelectionContext';
+import { useAuth } from '../../context/AuthContext';
 import { indicesApi } from '../../api/client';
+import { canCreateJira } from '../../utils/rbac';
 import type { PDNPattern } from '../../types/api';
 
 export default function Header() {
@@ -10,11 +12,15 @@ export default function Header() {
     const [isJiraModalOpen, setIsJiraModalOpen] = useState(false);
     const [jiraComment, setJiraComment] = useState('');
     const { selectedPatterns, selectedIndexPattern, setSelectedPatterns } = useSelection();
+    const { user, logout } = useAuth();
+    const navigate = useNavigate();
 
     // Кнопка активна если выделен хотя бы один пример ИЛИ если выбран индекс целиком в дереве (selectedIndexPattern)
     const hasSelection = selectedPatterns.length > 0 || selectedIndexPattern !== null;
     // Для Jira берутся только confirmed
     const confirmedCount = selectedPatterns.filter(p => p.status === 'confirmed').length;
+    // Заводить задачу в Jira могут только analyst и admin
+    const showJiraButton = canCreateJira(user?.role);
 
     const handleCreateJiraTask = async () => {
         const cacheKeys = selectedPatterns.filter(p => p.status === 'confirmed').map(p => p.cache_key);
@@ -32,6 +38,29 @@ export default function Header() {
         } catch (error) {
             console.error('Failed to create Jira task:', error);
             alert('Ошибка при создании задачи в Jira');
+        }
+    };
+
+    const handleLogout = () => {
+        logout();
+        navigate('/login');
+    };
+
+    const getRoleLabel = (role: string) => {
+        switch (role) {
+            case 'admin': return 'Администратор';
+            case 'analyst': return 'Аналитик';
+            case 'viewer': return 'Наблюдатель';
+            default: return role;
+        }
+    };
+
+    const getRoleColor = (role: string) => {
+        switch (role) {
+            case 'admin': return 'bg-red-500/20 text-red-400 border-red-500/30';
+            case 'analyst': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+            case 'viewer': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+            default: return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
         }
     };
 
@@ -57,7 +86,8 @@ export default function Header() {
             </div>
 
             <div className="flex items-center space-x-3">
-                {/* Глобальная кнопка заведения задачи */}
+                {/* Глобальная кнопка заведения задачи — только для analyst/admin */}
+                {showJiraButton && (
                 <button
                     disabled={!hasSelection}
                     onClick={() => setIsJiraModalOpen(true)}
@@ -72,6 +102,7 @@ export default function Header() {
                         </span>
                     )}
                 </button>
+                )}
                 <div className="relative hidden md:block group">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <Search className="h-4 w-4 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
@@ -94,17 +125,17 @@ export default function Header() {
                         onClick={() => setIsMenuOpen(!isMenuOpen)}
                         className="flex items-center space-x-2 p-1.5 hover:bg-slate-800 rounded-md transition-colors"
                     >
-                        <div className="w-7 h-7 rounded-sm bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold border border-indigo-500/30 text-sm">
-                            A
+                        <div className={`w-7 h-7 rounded-sm flex items-center justify-center text-sm font-bold border ${getRoleColor(user?.role || 'viewer')}`}>
+                            {user?.username?.charAt(0).toUpperCase() || 'A'}
                         </div>
                         <ChevronDown className="w-4 h-4 text-slate-400" />
                     </button>
 
-                    {isMenuOpen && (
+                    {isMenuOpen && user && (
                         <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 border border-slate-200 text-slate-700 z-50">
                             <div className="px-4 py-2 border-b border-slate-100">
-                                <p className="text-sm font-medium text-slate-900">Admin User</p>
-                                <p className="text-xs text-slate-500">Системный администратор</p>
+                                <p className="text-sm font-medium text-slate-900">{user.username}</p>
+                                <p className="text-xs text-slate-500">{getRoleLabel(user.role)}</p>
                             </div>
                             <NavLink to="/settings" onClick={() => setIsMenuOpen(false)} className="flex items-center px-4 py-2 text-sm hover:bg-slate-50 hover:text-blue-600">
                                 <Settings className="w-4 h-4 mr-2" /> Настройки системы
@@ -113,8 +144,8 @@ export default function Header() {
                                 <CheckSquare className="w-4 h-4 mr-2" /> Мои Задачи Jira
                             </NavLink>
                             <div className="border-t border-slate-100 my-1"></div>
-                            <button className="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full text-left">
-                                Выйти
+                            <button onClick={handleLogout} className="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full text-left">
+                                <LogOut className="w-4 h-4 mr-2" /> Выйти
                             </button>
                         </div>
                     )}
